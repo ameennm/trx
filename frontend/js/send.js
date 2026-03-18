@@ -62,6 +62,18 @@ const Send = {
         document.getElementById('fee-total').textContent = UI.formatUsdt(fee.totalFeeUSDT);
         document.getElementById('fee-deduction').textContent = UI.formatUsdt(fee.totalDeduction);
 
+        // Recovery fee row (show/hide based on whether there's a recovery)
+        const recoveryRow = document.getElementById('fee-recovery-row');
+        if (recoveryRow) {
+            if (fee.recoveryFeeUSDT > 0) {
+                document.getElementById('fee-recovery-usdt').textContent = UI.formatUsdt(fee.recoveryFeeUSDT);
+                document.getElementById('fee-recovery-trx').textContent = fee.recoveryFeeTRX.toFixed(1);
+                recoveryRow.style.display = 'flex';
+            } else {
+                recoveryRow.style.display = 'none';
+            }
+        }
+
         // Show the breakdown
         document.getElementById('fee-breakdown').style.display = 'block';
 

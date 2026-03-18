@@ -48,11 +48,38 @@ export default function SendPage() {
         deadline: quote.deadline,
         v, r, s,
       });
+
+      // Update local usdt balance via context dispatch (optional but better UX)
+      try {
+        const newBal = await api.getBalance(address);
+        dispatch({ type: 'SET_USDT_BALANCE', payload: newBal });
+      } catch (e) { /* ignore balance fetch error */ }
+
       setTxResult(res); setStep('result');
       toast('success', 'Transaction sent!');
     } catch (err) {
       setTxResult({ success: false, error: err.message }); setStep('result');
       toast('error', err.message);
+    }
+    setLoading(false);
+  };
+
+  const [setupStatus, setSetupStatus] = useState('');
+  const handleActivate = async () => {
+    setLoading(true);
+    try {
+      const result = await fundAndApprove(privateKey, address, api, (step, message) => {
+        setSetupStatus(message);
+      });
+      if (result.approved) {
+        toast('success', 'Wallet activated!');
+        setSetupStatus('');
+        // Refresh quote to clear the banner
+        handleGetQuote();
+      }
+    } catch (err) {
+      toast('error', 'Activation failed: ' + err.message);
+      setSetupStatus('');
     }
     setLoading(false);
   };
@@ -75,7 +102,7 @@ export default function SendPage() {
             <label className="input-label">Recipient Address</label>
             <input
               type="text" value={recipient} onChange={(e) => setRecipient(e.target.value)}
-              placeholder="T... or 0x..."
+              placeholder="T... (Recipient)"
               className="input-field font-mono text-[14px]"
             />
           </div>
@@ -89,7 +116,7 @@ export default function SendPage() {
                 className="input-field text-[20px] font-bold pr-20"
               />
               <button
-                onClick={() => setAmount(String(Math.max(0, state.usdtBalance - 10).toFixed(2)))}
+                onClick={() => setAmount(String(Math.max(0, state.usdtBalance - (quote?.fee?.totalFeeUSDT || 10)).toFixed(2)))}
                 className="absolute right-4 top-1/2 -translate-y-1/2 text-primary text-xs font-bold uppercase tracking-wide hover:opacity-70 transition-opacity"
               >
                 Max
@@ -118,6 +145,27 @@ export default function SendPage() {
             <div className="text-text-secondary font-bold text-sm mt-1">USDT</div>
           </div>
 
+          {/* Activation Notice */}
+          {!quote.allowanceSufficient && (
+            <div className={`p-4 rounded-2xl bg-warning/10 border border-warning/20 mb-6 flex flex-col gap-3 transition-all duration-300 ${loading ? 'opacity-50' : ''}`}>
+              <div className="flex items-center gap-3">
+                <div className="w-8 h-8 rounded-full bg-warning/20 flex items-center justify-center text-warning">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+                </div>
+                <div className="flex-1">
+                  <div className="text-[13px] font-bold text-warning">One-Time Activation Required</div>
+                  <div className="text-[11px] text-warning/80 leading-tight">We'll automatically set up your wallet for gasless transfers.</div>
+                </div>
+              </div>
+              <button 
+                onClick={handleActivate} 
+                className="w-full bg-warning text-bg-primary text-[12px] font-bold py-2 rounded-xl hover:opacity-90 transition-opacity"
+              >
+                {loading ? (setupStatus || 'Activating...') : 'Confirm & Activate'}
+              </button>
+            </div>
+          )}
+
           {/* Fee breakdown */}
           <div className="fee-card mb-8">
             <div className="fee-row">
@@ -125,26 +173,32 @@ export default function SendPage() {
               <span className="value">Tether (USDT)</span>
             </div>
             <div className="fee-row">
-              <span className="label">Network</span>
-              <span className="value">TRON Nile</span>
-            </div>
-            <div className="fee-row">
               <span className="label">Network Fee</span>
-              <span className="value">{quote.fee.networkFeeUSDT?.toFixed(4) || '—'} USDT</span>
+              <span className="value font-mono">{(quote.fee.networkFeeUSDT + quote.fee.markupUSDT).toFixed(4)} USDT</span>
             </div>
-            <div className="fee-row">
-              <span className="label">Service Fee</span>
-              <span className="value">{quote.fee.markupUSDT?.toFixed(4) || '—'} USDT</span>
+            {quote.fee.recoveryFeeUSDT > 0 && (
+              <div className="fee-row text-warning">
+                <span className="label">Activation Recovery</span>
+                <span className="value font-mono font-bold">+{quote.fee.recoveryFeeUSDT.toFixed(4)} USDT</span>
+              </div>
+            )}
+            <div className="fee-row total pt-3 border-t border-white/5 mt-2">
+              <span className="label">Total Fees</span>
+              <span className="value font-bold text-primary font-mono">{quote.fee.totalFeeUSDT.toFixed(4)} USDT</span>
             </div>
             <div className="fee-row total">
-              <span className="label">Max Total</span>
-              <span className="value">{quote.fee.totalDeduction?.toFixed(2) || (parseFloat(amount) + quote.fee.totalFeeUSDT).toFixed(2)} USDT</span>
+              <span className="label">Deduction</span>
+              <span className="value text-lg font-extrabold font-mono">{quote.fee.totalDeduction.toFixed(2)} USDT</span>
             </div>
           </div>
 
           <div className="mt-auto">
-            <button onClick={handleSend} disabled={loading} className="btn-primary">
-              {loading ? <span className="spinner-inline" /> : 'Confirm & Send'}
+            <button 
+              onClick={handleSend} 
+              disabled={loading || !quote.allowanceSufficient || !quote.balanceSufficient} 
+              className={`btn-primary ${(!quote.allowanceSufficient || !quote.balanceSufficient) ? 'opacity-30 cursor-not-allowed' : ''}`}
+            >
+              {!quote.balanceSufficient ? 'Insufficient Balance' : 'Confirm & Send'}
             </button>
           </div>
         </div>

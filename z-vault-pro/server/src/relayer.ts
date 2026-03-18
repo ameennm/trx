@@ -117,8 +117,8 @@ export async function getQuote(
   const from = fromAddress.trim();
   const to = toAddress.trim();
  
-  // Calculate fees
-  const fee = await calculateTotalDeduction(sendAmount, to);
+  // Calculate fees (pass sender for advance recovery)
+  const fee = await calculateTotalDeduction(sendAmount, to, from);
  
   // Check user's balance and allowance
   let nonce = 0;

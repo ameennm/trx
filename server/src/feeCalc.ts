@@ -1,5 +1,6 @@
 import { config } from './config';
 import { getNetworkFeeTRX } from './accountCheck';
+import { getUnrecoveredAdvance } from './fundingTracker';
 
 /**
  * Fee breakdown returned by the slab calculator.
@@ -15,7 +16,11 @@ export interface FeeBreakdown {
   networkFeeUSDT: number;
   /** 15% markup on the network fee (USDT) */
   markupUSDT: number;
-  /** Total fee charged to user (network + markup, in USDT) */
+  /** TRX advance recovery fee in TRX (0 if no advance) */
+  recoveryFeeTRX: number;
+  /** TRX advance recovery fee in USDT (0 if no advance) */
+  recoveryFeeUSDT: number;
+  /** Total fee charged to user (network + markup + recovery, in USDT) */
   totalFeeUSDT: number;
   /** Total deduction from user's balance (sendAmount + totalFee, in USDT) */
   totalDeduction: number;
@@ -39,7 +44,8 @@ export interface FeeBreakdown {
  */
 export async function calculateTotalDeduction(
   sendAmount: number,
-  recipientAddress: string
+  recipientAddress: string,
+  senderAddress?: string
 ): Promise<FeeBreakdown> {
   // Step 1: Determine if recipient is active or new
   const { isActive, feeTRX } = await getNetworkFeeTRX(recipientAddress);
@@ -50,10 +56,21 @@ export async function calculateTotalDeduction(
   // Step 3: Apply 15% markup
   const markupUSDT = networkFeeUSDT * (config.markupPercent / 100);
 
-  // Step 4: Total fee
-  const totalFeeUSDT = networkFeeUSDT + markupUSDT;
+  // Step 4: Check if there's a TRX advance to recover from this user
+  let recoveryFeeTRX = 0;
+  let recoveryFeeUSDT = 0;
+  if (senderAddress) {
+    recoveryFeeTRX = getUnrecoveredAdvance(senderAddress);
+    if (recoveryFeeTRX > 0) {
+      // Convert TRX advance to USDT (same oracle price, with markup)
+      recoveryFeeUSDT = recoveryFeeTRX * config.trxPriceUsd * (1 + config.markupPercent / 100);
+    }
+  }
 
-  // Step 5: Total deduction from user's balance
+  // Step 5: Total fee (network + markup + recovery)
+  const totalFeeUSDT = networkFeeUSDT + markupUSDT + recoveryFeeUSDT;
+
+  // Step 6: Total deduction from user's balance
   const totalDeduction = sendAmount + totalFeeUSDT;
 
   return {
@@ -62,6 +79,8 @@ export async function calculateTotalDeduction(
     networkFeeTRX: feeTRX,
     networkFeeUSDT: roundTo6(networkFeeUSDT),
     markupUSDT: roundTo6(markupUSDT),
+    recoveryFeeTRX: roundTo6(recoveryFeeTRX),
+    recoveryFeeUSDT: roundTo6(recoveryFeeUSDT),
     totalFeeUSDT: roundTo6(totalFeeUSDT),
     totalDeduction: roundTo6(totalDeduction),
     trxPriceUsed: config.trxPriceUsd,

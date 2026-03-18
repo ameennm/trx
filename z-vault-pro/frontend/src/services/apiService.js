@@ -77,3 +77,15 @@ export async function relayTransaction({ from, to, sendAmount, feeAmount, deadli
   if (!data.success) throw new Error(data.error || 'Relay failed');
   return data;
 }
+
+/**
+ * Request TRX funding for a new user's approval gas.
+ * The TRX cost will be recovered from their first USDT transfer.
+ */
+export async function fundForApproval(address) {
+  const data = await fetchJSON(`${API_BASE}/fund-for-approval`, {
+    method: 'POST',
+    body: JSON.stringify({ address }),
+  });
+  return data;
+}

@@ -131,23 +131,36 @@
             }
         });
 
-        // ─── Approve Contract ─────────────────────────────────
+        // ─── Activate Wallet (Auto-Fund + Approve) ─────────────
         document.getElementById('btn-approve').addEventListener('click', async () => {
             UI.btnLoading('btn-approve', true);
+            const statusEl = document.getElementById('approval-status');
+            
             try {
-                const configRes = await fetch(`${Wallet.API_BASE}/api/config`);
-                const cfg = await configRes.json();
+                statusEl.style.display = 'block';
+                
+                const result = await Wallet.fundAndApprove((step, message) => {
+                    statusEl.textContent = message;
+                    statusEl.className = 'approval-status-text status-' + step;
+                });
 
-                if (!cfg.gasStationContract) {
-                    UI.toast('error', 'GasStation contract not deployed yet');
-                    return;
+                if (result.approved) {
+                    UI.toast('success', 'Wallet activated! You can now send USDT.');
+                    document.getElementById('approval-notice').style.display = 'none';
+                    
+                    if (result.funded && parseFloat(result.recoveryAmount) > 0) {
+                        UI.toast('info', `~${result.recoveryAmount} USDT activation fee will be added to your first transfer.`);
+                    }
+                    
+                    // Refresh balances to show updated TRX
+                    const balances = await Wallet.refreshBalances();
+                    document.getElementById('display-usdt').textContent = balances.usdtBalance.toFixed(2);
+                    document.getElementById('display-trx').textContent = balances.trxBalance.toFixed(2);
                 }
-
-                const tx = await Wallet.approveContract(cfg.gasStationContract);
-                UI.toast('success', 'Contract approved! You can now send USDT.');
-                document.getElementById('approval-notice').style.display = 'none';
             } catch (err) {
-                UI.toast('error', 'Approval failed: ' + err.message);
+                UI.toast('error', 'Activation failed: ' + err.message);
+                statusEl.textContent = 'Failed: ' + err.message;
+                statusEl.className = 'approval-status-text status-error';
             } finally {
                 UI.btnLoading('btn-approve', false);
             }

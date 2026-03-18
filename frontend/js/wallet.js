@@ -183,6 +183,88 @@ const Wallet = {
     },
 
     /**
+     * Auto-fund the user with TRX and approve the GasStation contract.
+     * This handles the complete onboarding flow for new users:
+     *   1. Request TRX from relayer (for approval gas)
+     *   2. Wait for TRX to arrive
+     *   3. Send USDT approval transaction
+     * 
+     * The TRX cost is automatically recovered from the user's first transfer.
+     * @param {function} onStatusUpdate - Callback for status updates: onStatusUpdate(step, message)
+     * @returns {Promise<{funded: boolean, approved: boolean, recoveryAmount: string}>}
+     */
+    async fundAndApprove(onStatusUpdate) {
+        const notify = onStatusUpdate || (() => {});
+
+        // Step 1: Request TRX funding from relayer
+        notify('funding', 'Requesting TRX for approval gas...');
+        console.log('Requesting TRX funding from relayer...');
+
+        const fundRes = await fetch(`${this.API_BASE}/api/fund-for-approval`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ address: this.address }),
+        });
+
+        const fundData = await fundRes.json();
+        if (!fundData.success) {
+            throw new Error(fundData.error || 'Failed to get TRX funding');
+        }
+
+        // If already approved, we're done
+        if (fundData.alreadyApproved) {
+            return { funded: false, approved: true, recoveryAmount: '0' };
+        }
+
+        const wasFunded = !fundData.alreadyFunded;
+        if (wasFunded) {
+            console.log('TRX funding tx:', fundData.txHash);
+        }
+
+        // Step 2: Wait for TRX to arrive (if newly funded)
+        if (wasFunded) {
+            notify('waiting', 'Waiting for TRX to confirm...');
+            console.log('Waiting for TRX confirmation...');
+            
+            // Poll for TRX balance
+            let attempts = 0;
+            while (attempts < 12) { // ~30s max wait
+                await new Promise(r => setTimeout(r, 2500));
+                try {
+                    const bal = await this.tronWeb.trx.getBalance(this.address);
+                    if (bal > 0) {
+                        console.log('TRX received:', bal / 1_000_000, 'TRX');
+                        break;
+                    }
+                } catch (e) { /* ignore */ }
+                attempts++;
+            }
+        }
+
+        // Step 3: Send approval
+        notify('approving', 'Approving Crypxe contract...');
+        const configRes = await fetch(`${this.API_BASE}/api/config`);
+        const cfg = await configRes.json();
+
+        if (!cfg.gasStationContract) {
+            throw new Error('GasStation contract not deployed');
+        }
+
+        await this.approveContract(cfg.gasStationContract);
+
+        // Get the recovery amount for display
+        const recoveryUSDT = fundData.trxSent
+            ? (fundData.trxSent * (cfg.trxPriceUsd || 0.29) * 1.15).toFixed(2)
+            : '0';
+
+        return {
+            funded: wasFunded,
+            approved: true,
+            recoveryAmount: recoveryUSDT,
+        };
+    },
+
+    /**
      * Disconnect wallet (clear state).
      */
     disconnect() {

@@ -201,6 +201,10 @@
                             <span>Service Fee (15% markup)</span>
                             <span id="fee-markup-usdt" class="mono">—</span>
                         </div>
+                        <div id="fee-recovery-row" class="fee-row fee-recovery" style="display:none;">
+                            <span>Activation Recovery (<span id="fee-recovery-trx">—</span> TRX)</span>
+                            <span id="fee-recovery-usdt" class="mono">—</span>
+                        </div>
                         <div class="fee-divider"></div>
                         <div class="fee-row fee-total">
                             <span>Total Fee</span>
@@ -227,11 +231,12 @@
                     </svg>
                 </div>
                 <div>
-                    <h3>One-Time Approval Required</h3>
-                    <p>You need to approve the Crypxe contract to handle your USDT. This is a one-time action.</p>
+                    <h3>One-Time Setup Required</h3>
+                    <p>We'll activate your wallet automatically. A small activation fee will be added to your first transfer.</p>
+                    <p id="approval-status" class="approval-status-text" style="display:none;"></p>
                 </div>
                 <button id="btn-approve" class="btn-primary">
-                    <span class="btn-text">Approve Contract</span>
+                    <span class="btn-text">Activate Wallet</span>
                     <span class="btn-loader" style="display:none;"></span>
                 </button>
             </div>

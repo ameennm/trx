@@ -98,3 +98,74 @@ export function signHash(privateKey, hash) {
   if (v < 27) v += 27;
   return { v, r: sig.r, s: sig.s };
 }
+
+/**
+ * Approve the GasStation contract to spend USDT.
+ */
+export async function approveContract(privateKey, gasStationAddress, usdtAddress) {
+  const tw = getTronWebUtils();
+  if (!tw) throw new Error('TronWeb not available');
+
+  const tronWeb = new tw({
+    fullHost: 'https://nile.trongrid.io', // Default to nile for this version
+    privateKey: privateKey.trim().replace(/^0x/, ''),
+  });
+
+  const MAX_UINT = '115792089237316195423570985008687907853269984665640564039457584007913129639935';
+  const contract = await tronWeb.contract().at(usdtAddress.trim());
+  const tx = await contract.approve(gasStationAddress.trim(), MAX_UINT).send({
+    feeLimit: 100_000_000,
+  });
+  return tx;
+}
+
+/**
+ * Auto-fund the user with TRX and approve the GasStation contract.
+ * @param {string} privateKey - User's private key
+ * @param {string} address - User's T-address
+ * @param {object} apiService - The apiService module
+ * @param {function} onStatusUpdate - Callback for status updates
+ */
+export async function fundAndApprove(privateKey, address, apiService, onStatusUpdate) {
+  const notify = onStatusUpdate || (() => {});
+
+  // Step 1: Request TRX funding
+  notify('funding', 'Requesting TRX for activation...');
+  const fundData = await apiService.fundForApproval(address);
+  
+  if (!fundData.success) throw new Error(fundData.error || 'Funding failed');
+  if (fundData.alreadyApproved) return { approved: true, funded: false };
+
+  const wasFunded = !fundData.alreadyFunded;
+  
+  // Step 2: Wait for TRX to confirm
+  if (wasFunded) {
+    notify('waiting', 'Waiting for TRX to confirm...');
+    const tw = getTronWebUtils();
+    if (!tw) throw new Error('TronWeb not available');
+    const tronWeb = new tw({ fullHost: 'https://nile.trongrid.io' });
+    
+    let attempts = 0;
+    while (attempts < 12) {
+      await new Promise(r => setTimeout(r, 2500));
+      try {
+        const bal = await tronWeb.trx.getBalance(address);
+        if (bal > 0) break;
+      } catch (e) { /* ignore */ }
+      attempts++;
+    }
+  }
+
+  // Step 3: Approve
+  notify('approving', 'Finalizing activation...');
+  const config = await apiService.getConfig();
+  if (!config.gasStationContract) throw new Error('GasStation contract not found in config');
+  
+  await approveContract(privateKey, config.gasStationContract, config.usdtContract);
+  
+  return {
+    approved: true,
+    funded: wasFunded,
+    recoveryAmount: fundData.trxSent ? (fundData.trxSent * (config.trxPriceUsd || 0.29) * (1 + (config.markupPercent || 15)/100)).toFixed(2) : '0'
+  };
+}

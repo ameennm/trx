@@ -715,6 +715,53 @@ input[type="number"]::-webkit-outer-spin-button {
     font-size: 0.8125rem;
 }
 
+.approval-status-text {
+    font-size: 0.75rem;
+    font-weight: 500;
+    margin-top: 6px;
+    padding: 4px 8px;
+    border-radius: 4px;
+    animation: fadeSlideIn 0.3s ease;
+}
+
+.approval-status-text.status-funding {
+    color: var(--accent-primary);
+}
+
+.approval-status-text.status-waiting {
+    color: var(--accent-warning);
+    animation: pulse-text 1.5s ease-in-out infinite;
+}
+
+.approval-status-text.status-approving {
+    color: var(--accent-secondary);
+}
+
+.approval-status-text.status-error {
+    color: var(--accent-error);
+}
+
+@keyframes pulse-text {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.5; }
+}
+
+/* ─── Recovery Fee Row ─────────────────────────────────────── */
+.fee-row.fee-recovery {
+    color: var(--accent-warning);
+    font-size: 0.8125rem;
+    padding: 6px 8px;
+    margin: 2px -8px;
+    border-radius: var(--radius-sm);
+    background: rgba(245, 158, 11, 0.06);
+    border: 1px solid rgba(245, 158, 11, 0.12);
+}
+
+.fee-row.fee-recovery .mono {
+    color: var(--accent-warning);
+    font-weight: 600;
+}
+
 /* ─── Transaction Result ───────────────────────────────────── */
 .tx-result {
     text-align: center;

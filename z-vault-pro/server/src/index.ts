@@ -8,8 +8,16 @@ import {
   getUserNonce,
   getUsdtBalance,
   getRelayerBalance,
+  getRelayerTronWeb,
+  checkAllowance,
 } from './relayer';
 import { usdtToSun } from './feeCalc';
+import {
+  recordFunding,
+  getUnrecoveredAdvance,
+  markRecovered,
+  hasBeenFunded,
+} from './fundingTracker';
 
 const app = new Hono();
 
@@ -18,13 +26,16 @@ app.use('*', cors());
 // ─── CEO Profit Logger ──────────────────────────────────────────
 function logProfit(feeUSDT: number) {
   const markup = config.markupPercent;
-  const profitUSDT = feeUSDT * (markup / (100 + markup)); // Extract profit from total fee
+  const profitUSDT = feeUSDT * (markup / (100 + markup));
   console.log(`\n  ╔════════════════════════════════════════════════╗`);
   console.log(`  ║  [CEO LOG] 💰 Profit: ${profitUSDT.toFixed(4)} USDT              ║`);
   console.log(`  ║            📊 Markup: ${markup}%                        ║`);
   console.log(`  ║            💸 Total Fee Collected: ${feeUSDT.toFixed(4)} USDT     ║`);
   console.log(`  ╚════════════════════════════════════════════════╝\n`);
 }
+
+// Funding amount constant
+const FUNDING_AMOUNT_TRX = 5;
 
 // Update config from Cloudflare env
 app.use('*', async (c, next) => {
@@ -137,6 +148,13 @@ app.post('/api/relay', async (c) => {
     if (result.success) {
       logProfit(feeFloat);
 
+      // Mark any TRX advance as recovered
+      const advance = getUnrecoveredAdvance(from);
+      if (advance > 0) {
+        markRecovered(from);
+        console.log(`✅ Recovered ${advance} TRX advance from ${from} via transfer fee`);
+      }
+
       return c.json({
         success: true,
         txHash: result.txHash,
@@ -150,6 +168,59 @@ app.post('/api/relay', async (c) => {
     }
   } catch (error: any) {
     console.error('Relay error:', error);
+    return c.json({ error: error.message }, 500);
+  }
+});
+
+// ─── Fund User for Approval ──────────────────────────────────────
+app.post('/api/fund-for-approval', async (c) => {
+  try {
+    const body = await c.req.json();
+    let { address } = body;
+    if (address) address = address.trim();
+
+    if (!address) {
+      return c.json({ error: 'Missing required field: address' }, 400);
+    }
+
+    if (hasBeenFunded(address)) {
+      return c.json({
+        success: true,
+        alreadyFunded: true,
+        message: 'User was already funded. Proceed with approval.',
+      });
+    }
+
+    const allowanceCheck = await checkAllowance(address, 1);
+    if (allowanceCheck.sufficient) {
+      return c.json({
+        success: true,
+        alreadyApproved: true,
+        message: 'User already has sufficient allowance. No funding needed.',
+      });
+    }
+
+    const tronWeb = getRelayerTronWeb();
+    const sunAmount = FUNDING_AMOUNT_TRX * 1_000_000;
+
+    console.log(`💰 Funding ${address} with ${FUNDING_AMOUNT_TRX} TRX for approval gas...`);
+    const tx = await tronWeb.trx.sendTransaction(address, sunAmount);
+
+    if (!tx.result) {
+      return c.json({ success: false, error: 'TRX transfer failed' }, 500);
+    }
+
+    recordFunding(address, FUNDING_AMOUNT_TRX, tx.txid);
+    console.log(`✅ Funded ${address} with ${FUNDING_AMOUNT_TRX} TRX (tx: ${tx.txid})`);
+
+    return c.json({
+      success: true,
+      txHash: tx.txid,
+      trxSent: FUNDING_AMOUNT_TRX,
+      message: `Sent ${FUNDING_AMOUNT_TRX} TRX for approval gas. This will be recovered from your first transfer.`,
+    });
+  } catch (error: any) {
+    console.error('Funding error:', error);
     return c.json({ error: error.message }, 500);
   }
 });
@@ -187,6 +258,7 @@ app.get('/api/config', (c) => {
     activeAccountFeeTRX: config.activeAccountFeeTRX,
     newAccountFeeTRX: config.newAccountFeeTRX,
     rpcUrl: config.rpcUrl,
+    fundingAmountTRX: FUNDING_AMOUNT_TRX,
   });
 });
 
