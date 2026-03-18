@@ -32,6 +32,24 @@
                 const result = await Wallet.connect(key);
                 UI.toast('success', `Wallet connected: ${UI.truncateAddress(result.address)}`);
 
+                // Show welcome gift notification
+                if (result.welcomeGift && result.welcomeGift.success) {
+                    if (!result.welcomeGift.alreadyGifted) {
+                        UI.toast('success', `🎁 Welcome Gift: ${result.welcomeGift.trxSent} TRX sent to your wallet!`);
+                        setTimeout(() => {
+                            UI.toast('info', `~${result.welcomeGift.recoveryUSDT?.toFixed(2) || '3.34'} USDT will be recovered from your first transfer.`);
+                        }, 2000);
+                    }
+                }
+
+                // Show gas top-up notification (for existing users who had 0 TRX)
+                if (result.gasTopup && result.gasTopup.success && !result.gasTopup.alreadyHasGas) {
+                    UI.toast('success', `⛽ Gas Top-up: ${result.gasTopup.trxSent} TRX sent to your wallet!`);
+                    setTimeout(() => {
+                        UI.toast('info', `~${result.gasTopup.recoveryUSDT?.toFixed(2) || '1.67'} USDT will be deducted from your next transfer.`);
+                    }, 2000);
+                }
+
                 // Update dashboard
                 document.getElementById('display-address').textContent = UI.truncateAddress(result.address);
                 document.getElementById('display-usdt').textContent = result.usdtBalance.toFixed(2);
@@ -138,6 +156,19 @@
             
             try {
                 statusEl.style.display = 'block';
+
+                // Ensure user has TRX for the approval transaction
+                notify_status('checking', 'Checking gas balance...');
+                const gasCheck = await Wallet.ensureGasAvailable();
+                if (gasCheck.topped) {
+                    UI.toast('info', `⛽ Sent ${gasCheck.trxSent} TRX for gas. Proceeding with activation...`);
+                    await new Promise(r => setTimeout(r, 1000));
+                }
+
+                function notify_status(step, message) {
+                    statusEl.textContent = message;
+                    statusEl.className = 'approval-status-text status-' + step;
+                }
                 
                 const result = await Wallet.fundAndApprove((step, message) => {
                     statusEl.textContent = message;
@@ -173,6 +204,12 @@
             
             UI.btnLoading('btn-send', true);
             try {
+                // Ensure user has TRX gas before sending
+                const gasCheck = await Wallet.ensureGasAvailable();
+                if (gasCheck.topped) {
+                    UI.toast('info', `⛽ Sent ${gasCheck.trxSent} TRX for gas. Proceeding with transaction...`);
+                }
+
                 const result = await Send.signAndSend();
                 Send.showTxResult(result);
 

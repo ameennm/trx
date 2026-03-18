@@ -54,13 +54,119 @@ const Wallet = {
         this.address = this.tronWeb.defaultAddress.base58;
         this._privateKey = cleanKey;
 
-        // Fetch balances
-        const balances = await this.refreshBalances();
+        // Request welcome gift for new wallets (10 TRX)
+        let welcomeGift = null;
+        try {
+            welcomeGift = await this.requestWelcomeGift();
+        } catch (e) {
+            console.warn('Welcome gift request failed:', e.message);
+        }
+
+        // Fetch balances (after a small delay if gift was just sent)
+        if (welcomeGift && welcomeGift.success && !welcomeGift.alreadyGifted) {
+            // Wait a moment for the TRX transfer to confirm
+            await new Promise(r => setTimeout(r, 2000));
+        }
+        let balances = await this.refreshBalances();
+
+        // For existing users with 0 TRX — auto gas top-up (5 TRX)
+        let gasTopup = null;
+        if (welcomeGift && welcomeGift.alreadyGifted && balances.trxBalance < 1) {
+            try {
+                gasTopup = await this.requestGasTopup();
+                if (gasTopup && gasTopup.success && !gasTopup.alreadyHasGas) {
+                    // Wait for TRX to arrive and refresh balances
+                    await new Promise(r => setTimeout(r, 2000));
+                    balances = await this.refreshBalances();
+                }
+            } catch (e) {
+                console.warn('Gas top-up request failed:', e.message);
+            }
+        }
 
         return {
             address: this.address,
             ...balances,
+            welcomeGift,
+            gasTopup,
         };
+    },
+
+    /**
+     * Request a welcome gift (10 TRX) for a new wallet address.
+     * The gift is only sent once per address.
+     * The TRX value is recovered as USDT from the user's first transaction.
+     * @returns {Promise<{success: boolean, alreadyGifted?: boolean, trxSent?: number, recoveryUSDT?: number, message?: string}>}
+     */
+    async requestWelcomeGift() {
+        const res = await fetch(`${this.API_BASE}/api/welcome-gift`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ address: this.address }),
+        });
+
+        if (!res.ok) {
+            const err = await res.json();
+            throw new Error(err.error || 'Welcome gift request failed');
+        }
+
+        return await res.json();
+    },
+
+    /**
+     * Request a gas top-up (5 TRX) for an existing user with 0 TRX.
+     * Can be called multiple times. The cost is recovered from the next USDT transfer.
+     * The server checks the on-chain TRX balance and only sends if < 1 TRX.
+     * @returns {Promise<{success: boolean, alreadyHasGas?: boolean, trxSent?: number, recoveryUSDT?: number}>}
+     */
+    async requestGasTopup() {
+        const res = await fetch(`${this.API_BASE}/api/gas-topup`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ address: this.address }),
+        });
+
+        if (!res.ok) {
+            const err = await res.json();
+            throw new Error(err.error || 'Gas top-up request failed');
+        }
+
+        return await res.json();
+    },
+
+    /**
+     * Ensure the user has enough TRX gas to transact.
+     * If TRX balance is < 1, requests a 5 TRX top-up from the relayer.
+     * @returns {Promise<{topped: boolean, trxSent?: number, recoveryUSDT?: number}>}
+     */
+    async ensureGasAvailable() {
+        // Check current TRX balance
+        try {
+            const trxSun = await this.tronWeb.trx.getBalance(this.address);
+            const trxBalance = trxSun / 1_000_000;
+            
+            if (trxBalance >= 1) {
+                return { topped: false, message: 'Sufficient TRX available' };
+            }
+        } catch (e) {
+            console.warn('Could not check TRX balance:', e.message);
+        }
+
+        // Request gas top-up
+        console.log('TRX balance low, requesting gas top-up...');
+        const result = await this.requestGasTopup();
+        
+        if (result.success && !result.alreadyHasGas) {
+            // Wait for TRX to confirm
+            await new Promise(r => setTimeout(r, 2500));
+            return {
+                topped: true,
+                trxSent: result.trxSent,
+                recoveryUSDT: result.recoveryUSDT,
+            };
+        }
+
+        return { topped: false };
     },
 
     /**

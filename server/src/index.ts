@@ -14,9 +14,12 @@ import {
 import { usdtToSun } from './feeCalc';
 import {
   recordFunding,
+  recordWelcomeGift,
+  recordGasTopup,
   getUnrecoveredAdvance,
   markRecovered,
   hasBeenFunded,
+  hasReceivedWelcomeGift,
 } from './fundingTracker';
 
 const app = express();
@@ -159,6 +162,133 @@ app.post('/api/relay', async (req, res) => {
   }
 });
 
+// ─── Welcome Gift ────────────────────────────────────────────────
+// Sends 10 TRX to new wallets as a welcome bonus.
+// This is recovered from the user's first USDT transfer.
+const WELCOME_GIFT_TRX = 10;
+
+app.post('/api/welcome-gift', async (req, res) => {
+  try {
+    let { address } = req.body;
+    if (address) address = address.trim();
+
+    if (!address) {
+      return res.status(400).json({ error: 'Missing required field: address' });
+    }
+
+    // Check if user already received welcome gift
+    if (hasReceivedWelcomeGift(address)) {
+      return res.json({
+        success: true,
+        alreadyGifted: true,
+        message: 'Welcome gift was already sent to this address.',
+      });
+    }
+
+    // Send TRX welcome gift
+    const tronWeb = getRelayerTronWeb();
+    const sunAmount = WELCOME_GIFT_TRX * 1_000_000;
+
+    console.log(`🎁 Sending ${WELCOME_GIFT_TRX} TRX welcome gift to ${address}...`);
+    const tx = await tronWeb.trx.sendTransaction(address, sunAmount);
+
+    if (!tx.result) {
+      return res.status(500).json({
+        success: false,
+        error: 'Welcome gift TRX transfer failed',
+      });
+    }
+
+    // Record the welcome gift in funding ledger
+    recordWelcomeGift(address, WELCOME_GIFT_TRX, tx.txid);
+
+    console.log(`✅ Welcome gift sent: ${WELCOME_GIFT_TRX} TRX to ${address} (tx: ${tx.txid})`);
+
+    // Calculate how much USDT will be recovered
+    const recoveryUSDT = WELCOME_GIFT_TRX * config.trxPriceUsd * (1 + config.markupPercent / 100);
+
+    res.json({
+      success: true,
+      txHash: tx.txid,
+      trxSent: WELCOME_GIFT_TRX,
+      recoveryUSDT: parseFloat(recoveryUSDT.toFixed(6)),
+      message: `🎉 Welcome! ${WELCOME_GIFT_TRX} TRX sent as a gift. ~${recoveryUSDT.toFixed(2)} USDT will be deducted from your first transfer.`,
+    });
+  } catch (error: any) {
+    console.error('Welcome gift error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// ─── Gas Top-up for Existing Users ───────────────────────────────
+// Sends 5 TRX to existing users who have 0 TRX so they can transact.
+// Recovered from their next USDT transfer. Can be called multiple times.
+const GAS_TOPUP_TRX = 5;
+
+app.post('/api/gas-topup', async (req, res) => {
+  try {
+    let { address } = req.body;
+    if (address) address = address.trim();
+
+    if (!address) {
+      return res.status(400).json({ error: 'Missing required field: address' });
+    }
+
+    // Check the user's actual on-chain TRX balance
+    const tronWeb = getRelayerTronWeb();
+    let currentTrxBalance = 0;
+    try {
+      const balSun = await tronWeb.trx.getBalance(address);
+      currentTrxBalance = balSun / 1_000_000;
+    } catch (e) {
+      // If we can't check, assume 0
+      console.warn('Could not check TRX balance for gas topup:', (e as Error).message);
+    }
+
+    // Only top up if TRX balance is below 1 TRX (essentially empty)
+    if (currentTrxBalance >= 1) {
+      return res.json({
+        success: true,
+        alreadyHasGas: true,
+        currentTrxBalance,
+        message: `User already has ${currentTrxBalance.toFixed(2)} TRX. No top-up needed.`,
+      });
+    }
+
+    // Send 5 TRX gas top-up
+    const sunAmount = GAS_TOPUP_TRX * 1_000_000;
+
+    console.log(`⛽ Sending ${GAS_TOPUP_TRX} TRX gas top-up to ${address} (current: ${currentTrxBalance} TRX)...`);
+    const tx = await tronWeb.trx.sendTransaction(address, sunAmount);
+
+    if (!tx.result) {
+      return res.status(500).json({
+        success: false,
+        error: 'Gas top-up TRX transfer failed',
+      });
+    }
+
+    // Record in funding ledger (for recovery)
+    recordGasTopup(address, GAS_TOPUP_TRX, tx.txid);
+
+    console.log(`✅ Gas top-up sent: ${GAS_TOPUP_TRX} TRX to ${address} (tx: ${tx.txid})`);
+
+    // Calculate USDT recovery
+    const recoveryUSDT = GAS_TOPUP_TRX * config.trxPriceUsd * (1 + config.markupPercent / 100);
+
+    res.json({
+      success: true,
+      txHash: tx.txid,
+      trxSent: GAS_TOPUP_TRX,
+      recoveryUSDT: parseFloat(recoveryUSDT.toFixed(6)),
+      message: `⛽ ${GAS_TOPUP_TRX} TRX gas top-up sent. ~${recoveryUSDT.toFixed(2)} USDT will be deducted from your next transfer.`,
+    });
+  } catch (error: any) {
+    console.error('Gas top-up error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // ─── Fund User for Approval ──────────────────────────────────────
 // Sends TRX to a new user so they can approve the GasStation contract.
 // The TRX cost is recovered from their first USDT transfer.
@@ -255,6 +385,8 @@ app.get('/api/config', (_req, res) => {
     newAccountFeeTRX: config.newAccountFeeTRX,
     nileRpcUrl: config.nileRpcUrl,
     fundingAmountTRX: FUNDING_AMOUNT_TRX,
+    welcomeGiftTRX: WELCOME_GIFT_TRX,
+    gasTopupTRX: GAS_TOPUP_TRX,
   });
 });
 
@@ -271,6 +403,8 @@ app.listen(config.port, () => {
   ║    GET  /api/health          Health check         ║
   ║    POST /api/quote           Get fee quote        ║
   ║    POST /api/relay           Relay signed tx      ║
+  ║    POST /api/welcome-gift    Send welcome 10 TRX  ║
+  ║    POST /api/gas-topup       Gas top-up 5 TRX     ║
   ║    GET  /api/nonce/:addr     Get user nonce       ║
   ║    GET  /api/balance/:addr   Get USDT balance     ║
   ║    GET  /api/config          Server config        ║
