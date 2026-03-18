@@ -44,14 +44,28 @@ const Send = {
     displayFeeBreakdown(quote) {
         const fee = quote.fee;
 
-        // Account type badge
-        const badge = document.getElementById('fee-account-type');
-        if (fee.recipientIsActive) {
-            badge.textContent = 'Active Account';
-            badge.className = 'fee-badge active';
-        } else {
-            badge.textContent = 'New Account';
-            badge.className = 'fee-badge new-account';
+        // Sender status badge
+        const senderBadge = document.getElementById('sender-status-badge');
+        if (senderBadge) {
+            if (fee.senderIsActive) {
+                senderBadge.textContent = '✅ Active';
+                senderBadge.className = 'fee-badge active';
+            } else {
+                senderBadge.textContent = '⚠️ Not Activated';
+                senderBadge.className = 'fee-badge new-account';
+            }
+        }
+
+        // Receiver status badge
+        const receiverBadge = document.getElementById('receiver-status-badge');
+        if (receiverBadge) {
+            if (fee.recipientIsActive) {
+                receiverBadge.textContent = '✅ Active';
+                receiverBadge.className = 'fee-badge active';
+            } else {
+                receiverBadge.textContent = '⚠️ Not Activated';
+                receiverBadge.className = 'fee-badge new-account';
+            }
         }
 
         // Fee values

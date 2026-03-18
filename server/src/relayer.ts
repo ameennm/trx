@@ -70,11 +70,29 @@ export async function getUserNonce(userAddress: string): Promise<number> {
  * Get the user's USDT balance.
  */
 export async function getUsdtBalance(userAddress: string): Promise<number> {
-  const tronWeb = getRelayerTronWeb();
-  const userHex = tronWeb.address.toHex(userAddress.trim());
-  const contract = await tronWeb.contract(USDT_ABI, config.usdtContract);
-  const balance = await contract.methods.balanceOf(userHex).call();
-  return Number(balance) / 10 ** config.usdtDecimals;
+  try {
+    const tronWeb = getRelayerTronWeb();
+    const userHex = tronWeb.address.toHex(userAddress.trim());
+    const contract = await tronWeb.contract(USDT_ABI, config.usdtContract);
+    const balance = await contract.methods.balanceOf(userHex).call();
+    
+    // Handle TronWeb v6 return values (can be BigInt, string, or { balance: ... })
+    let finalValue: any = balance;
+    if (balance && typeof balance === 'object' && balance.balance !== undefined) {
+      finalValue = balance.balance;
+    } else if (Array.isArray(balance)) {
+      finalValue = balance[0];
+    }
+
+    if (finalValue === undefined || finalValue === null) return 0;
+    
+    // Convert to number and shift decimals
+    const valStr = finalValue.toString();
+    return Number(valStr) / 10 ** config.usdtDecimals;
+  } catch (err) {
+    console.error(`Balance fetch failed for ${userAddress}:`, (err as Error).message);
+    return 0;
+  }
 }
 
 /**

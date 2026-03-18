@@ -647,6 +647,33 @@ input[type="number"]::-webkit-outer-spin-button {
     border: 1px solid rgba(245, 158, 11, 0.2);
 }
 
+/* Account Status Row (Sender/Receiver badges) */
+.account-status-row {
+    display: flex;
+    gap: 12px;
+    margin-bottom: 16px;
+}
+
+.account-status-item {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+    padding: 10px 8px;
+    border-radius: var(--radius-sm);
+    background: rgba(255, 255, 255, 0.02);
+    border: 1px solid var(--border-color);
+}
+
+.account-status-label {
+    font-size: 0.6875rem;
+    font-weight: 600;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
 .fee-rows {
     display: flex;
     flex-direction: column;

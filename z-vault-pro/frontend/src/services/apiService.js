@@ -79,8 +79,9 @@ export async function relayTransaction({ from, to, sendAmount, feeAmount, deadli
 }
 
 /**
- * Request TRX funding for a new user's approval gas.
- * The TRX cost will be recovered from their first USDT transfer.
+ * Request TRX funding for approval gas (5 TRX, one-time).
+ * This is the ONLY TRX the relayer ever sends to a user.
+ * Recovered from their first USDT transfer fee.
  */
 export async function fundForApproval(address) {
   const data = await fetchJSON(`${API_BASE}/fund-for-approval`, {

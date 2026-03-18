@@ -100,8 +100,6 @@ export default function Dashboard() {
         </button>
       </div>
 
-
-
       {/* ── Assets ── */}
       <div className="section-header">
         <span className="section-title">Assets</span>

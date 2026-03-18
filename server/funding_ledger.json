@@ -1,0 +1,13 @@
+{
+  "TU2bETBe3H2UkGgquoQfrgvN1fCzCU4ypY": {
+    "trxAdvanced": 0,
+    "fundedAt": 0,
+    "txHash": "",
+    "recovered": false,
+    "welcomeGiftTRX": 10,
+    "welcomeGiftTxHash": "176d731ab65f3bd175ecd59ee0411abbd5f6f754f07d21466f401d8a355a83ed",
+    "welcomeGiftAt": 1773853286657,
+    "welcomeGiftSent": true,
+    "gasTopups": []
+  }
+}

@@ -2,9 +2,6 @@ import { config } from './config';
 import { getNetworkFeeTRX } from './accountCheck';
 import { getUnrecoveredAdvance } from './fundingTracker';
 
-/**
- * Fee breakdown returned by the slab calculator.
- */
 export interface FeeBreakdown {
   sendAmount: number;
   recipientIsActive: boolean;
@@ -24,9 +21,11 @@ export async function calculateTotalDeduction(
   senderAddress?: string
 ): Promise<FeeBreakdown> {
   const { isActive, feeTRX } = await getNetworkFeeTRX(recipientAddress);
+
   const networkFeeUSDT = feeTRX * config.trxPriceUsd;
   const markupUSDT = networkFeeUSDT * (config.markupPercent / 100);
 
+  // Check if there's a TRX advance (from approval funding) to recover
   let recoveryFeeTRX = 0;
   let recoveryFeeUSDT = 0;
   if (senderAddress) {

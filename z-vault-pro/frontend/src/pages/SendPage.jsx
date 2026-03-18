@@ -49,11 +49,10 @@ export default function SendPage() {
         v, r, s,
       });
 
-      // Update local usdt balance via context dispatch (optional but better UX)
       try {
         const newBal = await api.getBalance(address);
         dispatch({ type: 'SET_USDT_BALANCE', payload: newBal });
-      } catch (e) { /* ignore balance fetch error */ }
+      } catch (e) { /* ignore */ }
 
       setTxResult(res); setStep('result');
       toast('success', 'Transaction sent!');
@@ -74,7 +73,6 @@ export default function SendPage() {
       if (result.approved) {
         toast('success', 'Wallet activated!');
         setSetupStatus('');
-        // Refresh quote to clear the banner
         handleGetQuote();
       }
     } catch (err) {
@@ -145,7 +143,7 @@ export default function SendPage() {
             <div className="text-text-secondary font-bold text-sm mt-1">USDT</div>
           </div>
 
-          {/* Activation Notice */}
+          {/* Activation Notice — only shows once before first transaction */}
           {!quote.allowanceSufficient && (
             <div className={`p-4 rounded-2xl bg-warning/10 border border-warning/20 mb-6 flex flex-col gap-3 transition-all duration-300 ${loading ? 'opacity-50' : ''}`}>
               <div className="flex items-center gap-3">
@@ -154,7 +152,7 @@ export default function SendPage() {
                 </div>
                 <div className="flex-1">
                   <div className="text-[13px] font-bold text-warning">One-Time Activation Required</div>
-                  <div className="text-[11px] text-warning/80 leading-tight">We'll automatically set up your wallet for gasless transfers.</div>
+                  <div className="text-[11px] text-warning/80 leading-tight">We'll send you TRX for gas and authorize your wallet for gasless transfers. The TRX cost (~1.67 USDT) is recovered from your first transfer fee.</div>
                 </div>
               </div>
               <button 
@@ -166,6 +164,16 @@ export default function SendPage() {
             </div>
           )}
 
+          {/* Recipient status */}
+          <div className="flex items-center gap-2 mb-4 px-1">
+            <span className="text-[11px] text-text-tertiary">Recipient:</span>
+            {quote.fee.recipientIsActive ? (
+              <span className="text-[11px] font-bold text-success px-2 py-0.5 rounded-full bg-success/10 border border-success/20">Active Account</span>
+            ) : (
+              <span className="text-[11px] font-bold text-warning px-2 py-0.5 rounded-full bg-warning/10 border border-warning/20">New Account (higher fee)</span>
+            )}
+          </div>
+
           {/* Fee breakdown */}
           <div className="fee-card mb-8">
             <div className="fee-row">
@@ -173,12 +181,16 @@ export default function SendPage() {
               <span className="value">Tether (USDT)</span>
             </div>
             <div className="fee-row">
-              <span className="label">Network Fee</span>
-              <span className="value font-mono">{(quote.fee.networkFeeUSDT + quote.fee.markupUSDT).toFixed(4)} USDT</span>
+              <span className="label">Network Fee ({quote.fee.networkFeeTRX} TRX)</span>
+              <span className="value font-mono">{quote.fee.networkFeeUSDT.toFixed(4)} USDT</span>
+            </div>
+            <div className="fee-row">
+              <span className="label">Service Fee (15%)</span>
+              <span className="value font-mono">{quote.fee.markupUSDT.toFixed(4)} USDT</span>
             </div>
             {quote.fee.recoveryFeeUSDT > 0 && (
               <div className="fee-row text-warning">
-                <span className="label">Activation Recovery</span>
+                <span className="label">Activation Recovery ({quote.fee.recoveryFeeTRX} TRX)</span>
                 <span className="value font-mono font-bold">+{quote.fee.recoveryFeeUSDT.toFixed(4)} USDT</span>
               </div>
             )}
