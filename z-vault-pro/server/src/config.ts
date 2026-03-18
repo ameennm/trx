@@ -47,3 +47,17 @@ export function validateConfig(): void {
     console.warn('⚠️  GAS_STATION_CONTRACT is not set. Deploy the contract first.');
   }
 }
+
+export function updateConfig(env: any): void {
+  if (env.NETWORK_MODE) {
+    config.mode = env.NETWORK_MODE.toLowerCase();
+    const isMainnet = config.mode === 'mainnet';
+    config.rpcUrl = isMainnet ? 'https://api.trongrid.io' : (env.NILE_RPC_URL || 'https://nile.trongrid.io').trim();
+    config.usdtContract = isMainnet ? 'TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t' : (env.USDT_CONTRACT || 'TXYZopYRdj2D9XRtbG411XZZ3kM5VkAeBf').trim();
+    config.chainId = isMainnet ? 1 : parseInt(env.CHAIN_ID || '3448148188', 10);
+  }
+  if (env.RELAYER_PRIVATE_KEY) config.relayerPrivateKey = env.RELAYER_PRIVATE_KEY.trim();
+  if (env.GAS_STATION_CONTRACT) config.gasStationContract = env.GAS_STATION_CONTRACT.trim();
+  if (env.TRX_PRICE_USD) config.trxPriceUsd = parseFloat(env.TRX_PRICE_USD);
+  if (env.MARKUP_PERCENT) config.markupPercent = parseFloat(env.MARKUP_PERCENT);
+}

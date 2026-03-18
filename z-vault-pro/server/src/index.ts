@@ -184,21 +184,23 @@ app.get('/api/config', (_req, res) => {
 // ─── Start Server ────────────────────────────────────────────────
 validateConfig();
 
-app.listen(config.port, () => {
-  const banner = config.mode === 'mainnet'
-    ? '║         ⚠️  CRYPXE — MAINNET LIVE RELAYER ⚠️         ║'
-    : '║          CRYPXE — NILE TESTNET RELAYER                ║';
+if (typeof process !== 'undefined' && process.env.NODE_ENV !== 'cloudflare') {
+  app.listen(config.port, () => {
+    const banner = config.mode === 'mainnet'
+      ? '║         ⚠️  CRYPXE — MAINNET LIVE RELAYER ⚠️         ║'
+      : '║          CRYPXE — NILE TESTNET RELAYER                ║';
 
-  console.log(`
-  ╔══════════════════════════════════════════════════════╗
-  ${banner}
-  ║        Running on port ${config.port}                        ║
-  ╠══════════════════════════════════════════════════════╣
-  ║  Markup: ${config.markupPercent}% (set MARKUP_PERCENT to 20?)    ║
-  ╠══════════════════════════════════════════════════════╣
-  ║  USDT: ${config.usdtContract.slice(0, 8)}...${config.usdtContract.slice(-8)}           ║
-  ╚══════════════════════════════════════════════════════╝
-`);
-});
+    console.log(`
+    ╔══════════════════════════════════════════════════════╗
+    ${banner}
+    ║        Running on port ${config.port}                        ║
+    ╠══════════════════════════════════════════════════════╣
+    ║  Markup: ${config.markupPercent}% (set MARKUP_PERCENT to 20?)    ║
+    ╠══════════════════════════════════════════════════════╣
+    ║  USDT: ${config.usdtContract.slice(0, 8)}...${config.usdtContract.slice(-8)}           ║
+    ╚══════════════════════════════════════════════════════╝
+  `);
+  });
+}
 
 export default app;
