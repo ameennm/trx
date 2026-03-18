@@ -4,38 +4,7 @@ import { config } from './config';
 import { calculateTotalDeduction, usdtToSun, FeeBreakdown } from './feeCalc';
 
 // GasStation ABI (only the functions we need)
-const GAS_STATION_ABI = [
-  {
-    "inputs": [
-      { "name": "from", "type": "address" },
-      { "name": "to", "type": "address" },
-      { "name": "sendAmount", "type": "uint256" },
-      { "name": "feeAmount", "type": "uint256" },
-      { "name": "deadline", "type": "uint256" },
-      { "name": "v", "type": "uint8" },
-      { "name": "r", "type": "bytes32" },
-      { "name": "s", "type": "bytes32" }
-    ],
-    "name": "executeTransfer",
-    "outputs": [],
-    "stateMutability": "nonpayable",
-    "type": "function"
-  },
-  {
-    "inputs": [{ "name": "", "type": "address" }],
-    "name": "nonces",
-    "outputs": [{ "name": "", "type": "uint256" }],
-    "stateMutability": "view",
-    "type": "function"
-  },
-  {
-    "inputs": [],
-    "name": "getDomainSeparator",
-    "outputs": [{ "name": "", "type": "bytes32" }],
-    "stateMutability": "view",
-    "type": "function"
-  }
-];
+const GAS_STATION_ABI = require('./contractData.json').abi;
 
 // TRC20 USDT ABI (subset)
 const USDT_ABI = [
@@ -193,40 +162,54 @@ export async function buildTypedDataHash(params: {
   contractAddress: string;
   chainId: number;
 }): Promise<string> {
-  const DOMAIN_TYPEHASH = ethers.keccak256(
-    ethers.toUtf8Bytes(
-      "EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)"
-    )
-  );
+  const tronWeb = getRelayerTronWeb();
+  
+  const sendAmountSun = usdtToSun(params.sendAmount);
+  const feeAmountSun = usdtToSun(params.feeAmount);
 
+  // PRIMARY: Fetch the digest directly from the contract
+  // This guarantees bit-perfect alignment with what the contract verifies
+  try {
+    const contract = await tronWeb.contract(GAS_STATION_ABI, params.contractAddress);
+    const digest = await contract.getTransferDigest(
+      params.from.trim(),
+      params.to.trim(),
+      sendAmountSun.toString(),
+      feeAmountSun.toString(),
+      params.deadline
+    ).call();
+    
+    console.log('--- EIP-712 Debug (Contract-Sourced) ---');
+    console.log('from:             ', params.from);
+    console.log('to:               ', params.to);
+    console.log('sendAmount (sun): ', sendAmountSun.toString());
+    console.log('feeAmount (sun):  ', feeAmountSun.toString());
+    console.log('nonce:            ', params.nonce);
+    console.log('deadline:         ', params.deadline);
+    console.log('finalDigest:      ', digest);
+    console.log('------------------------------');
+    
+    return digest;
+  } catch (e) {
+    console.error('Failed to fetch digest from contract:', (e as any).message);
+    console.error('Falling back to local calculation (WARNING: may not match!)');
+  }
+
+  // FALLBACK: Local calculation (should rarely be used)
   const TRANSFER_TYPEHASH = ethers.keccak256(
     ethers.toUtf8Bytes(
       "Transfer(address from,address to,uint256 sendAmount,uint256 feeAmount,uint256 nonce,uint256 deadline)"
     )
   );
 
-  // Convert TRON addresses to EVM hex format for hashing
-  const tronWeb = getRelayerTronWeb();
-  let fromHex, toHex, contractHex;
-
+  let fromHex, toHex;
   try {
     fromHex = '0x' + tronWeb.address.toHex(params.from.trim()).slice(2);
     toHex = '0x' + tronWeb.address.toHex(params.to.trim()).slice(2);
-    contractHex = '0x' + tronWeb.address.toHex(params.contractAddress.trim()).slice(2);
   } catch (e) {
-    console.error('TRON Address Conversion Failed:', {
-      from: params.from,
-      to: params.to,
-      contract: params.contractAddress,
-      error: (e as any).message
-    });
     throw new Error('Invalid address provided to buildTypedDataHash');
   }
 
-  const sendAmountSun = usdtToSun(params.sendAmount);
-  const feeAmountSun = usdtToSun(params.feeAmount);
-
-  // Struct hash
   const structHash = ethers.keccak256(
     ethers.AbiCoder.defaultAbiCoder().encode(
       ['bytes32', 'address', 'address', 'uint256', 'uint256', 'uint256', 'uint256'],
@@ -234,22 +217,24 @@ export async function buildTypedDataHash(params: {
     )
   );
 
-  // Fetch the DOMAIN_SEPARATOR directly from the contract for bit-perfect alignment
-  // This is much safer than calculating it on the server
+  // Fetch DOMAIN_SEPARATOR from the contract
   let domainSeparator;
   try {
     const contract = await tronWeb.contract(GAS_STATION_ABI, params.contractAddress);
-    domainSeparator = await contract.methods.DOMAIN_SEPARATOR().call();
-    console.log('Using On-chain Domain Separator:', domainSeparator);
+    domainSeparator = await contract.DOMAIN_SEPARATOR().call();
   } catch (e) {
-    console.error('Failed to fetch DOMAIN_SEPARATOR from contract:', (e as any).message);
-    // Fallback calculation as a last resort
+    const DOMAIN_TYPEHASH = ethers.keccak256(
+      ethers.toUtf8Bytes(
+        "EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)"
+      )
+    );
+    const contractHex = '0x' + tronWeb.address.toHex(params.contractAddress.trim()).slice(2);
     domainSeparator = ethers.keccak256(
       ethers.AbiCoder.defaultAbiCoder().encode(
         ['bytes32', 'bytes32', 'bytes32', 'uint256', 'address'],
         [
           DOMAIN_TYPEHASH,
-          ethers.keccak256(ethers.toUtf8Bytes("ZVault-GasStation")),
+          ethers.keccak256(ethers.toUtf8Bytes("Crypxe-GasStation")),
           ethers.keccak256(ethers.toUtf8Bytes("1")),
           params.chainId,
           contractHex,
@@ -258,29 +243,11 @@ export async function buildTypedDataHash(params: {
     );
   }
 
-  // Final EIP-712 digest
-  // Use ethers.concat for bit-perfect alignment with Solidity's abi.encodePacked
   const digest = ethers.keccak256(
-    ethers.concat([
-      '0x1901',
-      domainSeparator,
-      structHash
-    ])
+    ethers.concat(['0x1901', domainSeparator, structHash])
   );
 
-  console.log('--- EIP-712 Debug (Server) ---');
-  console.log('DOMAIN_TYPEHASH:  ', DOMAIN_TYPEHASH);
-  console.log('TRANSFER_TYPEHASH:', TRANSFER_TYPEHASH);
-  console.log('from (hex):       ', fromHex);
-  console.log('to (hex):         ', toHex);
-  console.log('contract (hex):   ', contractHex);
-  console.log('sendAmount (sun): ', sendAmountSun.toString());
-  console.log('feeAmount (sun):  ', feeAmountSun.toString());
-  console.log('nonce:            ', params.nonce);
-  console.log('deadline:         ', params.deadline);
-  console.log('chainId:          ', params.chainId);
-  console.log('structHash:       ', structHash);
-  console.log('domainSeparator:  ', domainSeparator);
+  console.log('--- EIP-712 Debug (Fallback) ---');
   console.log('finalDigest:      ', digest);
   console.log('------------------------------');
 

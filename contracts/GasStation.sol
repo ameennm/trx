@@ -38,7 +38,7 @@ contract GasStation {
         "Transfer(address from,address to,uint256 sendAmount,uint256 feeAmount,uint256 nonce,uint256 deadline)"
     );
 
-    string public constant NAME = "ZVault-GasStation";
+    string public constant NAME = "Crypxe-GasStation";
     string public constant VERSION = "1";
 
     // Nile testnet chain ID (use the actual value from the network)

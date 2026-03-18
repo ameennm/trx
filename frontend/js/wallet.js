@@ -118,7 +118,7 @@ const Wallet = {
 
     /**
      * Sign a message hash with the user's private key.
-     * Returns { v, r, s } components.
+     * Uses RAW ECDSA signing (no prefix) to match the contract's ecrecover.
      * @param {string} messageHash - hex string (0x-prefixed)
      */
     async signHash(messageHash) {
@@ -126,31 +126,24 @@ const Wallet = {
             throw new Error('Internal Error: No transaction hash was generated. Please get a quote again.');
         }
         const cleanHash = messageHash.trim();
-        console.log('Signing message hash (TRON-native):', cleanHash);
+        console.log('Signing message hash (RAW ECDSA):', cleanHash);
         
         try {
-            // Strip 0x if present for TronWeb compatibility
-            const hash = cleanHash.startsWith('0x') ? cleanHash.slice(2) : cleanHash;
- 
-            // Use the standard TRON sign method. 
-            // Passing 'false' as the 3rd argument tells TronWeb NOT to add 
-            // the "\x19TRON Signed Message" prefix.
-            const signature = await this.tronWeb.trx.sign(hash, this._privateKey, false);
-            console.log('Signature generated successfully (Raw)');
- 
-            // TronWeb Returns signature as a long hex string (130 chars)
-            const sig = signature.startsWith('0x') ? signature.slice(2) : signature;
-            const r = '0x' + sig.slice(0, 64);
-            const s = '0x' + sig.slice(64, 128);
-            let v = parseInt(sig.slice(128, 130), 16);
- 
-            // Normalize v for the smart contract (EVM/TVM standard)
+            // Ensure 0x prefix for ethers
+            const hash = cleanHash.startsWith('0x') ? cleanHash : '0x' + cleanHash;
+
+            // Use ethers.js for raw ECDSA signing (no message prefix)
+            // This produces a signature that matches Solidity's ecrecover exactly
+            const wallet = new ethers.Wallet(this._privateKey);
+            const sig = wallet._signingKey().signDigest(hash);
+            
+            let v = sig.v;
             if (v < 27) v += 27;
- 
-            console.log(`Signature (TRON-Raw): v=${v}, r=${r.slice(0,10)}..., s=${s.slice(0,10)}...`);
-            return { v, r, s };
+
+            console.log(`Signature (RAW ECDSA): v=${v}, r=${sig.r.slice(0,10)}..., s=${sig.s.slice(0,10)}...`);
+            return { v, r: sig.r, s: sig.s };
         } catch (e) {
-            console.error('TRON Signing failed:', e);
+            console.error('Signing failed:', e);
             throw new Error('Failed to sign transaction: ' + e.message);
         }
     },
