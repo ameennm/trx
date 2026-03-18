@@ -1,10 +1,39 @@
 import * as bip39 from 'bip39';
 import { ethers } from 'ethers';
+import { TronWeb } from 'tronweb';
 
 /**
  * Crypxe — Wallet Service
  * BIP-39 mnemonic generation and BIP-44 key derivation for TRON + EVM.
  */
+
+// Get a working TronWeb constructor
+function getTronWebUtils() {
+  // Try the npm import first
+  if (TronWeb && TronWeb.address) return TronWeb;
+  // Fallback to window
+  if (typeof window !== 'undefined' && window.TronWeb) {
+    return window.TronWeb?.TronWeb || window.TronWeb;
+  }
+  return null;
+}
+
+/**
+ * Convert a hex address to TRON base58 T-address.
+ */
+function hexToTronAddress(hexAddress, privateKey) {
+  const tw = getTronWebUtils();
+  if (tw && tw.address) {
+    try {
+      return tw.address.fromPrivateKey(privateKey);
+    } catch (e) {
+      console.warn('TronWeb.address.fromPrivateKey failed:', e);
+    }
+  }
+  // Manual fallback: prepend 0x41 to the 20-byte address and base58check encode
+  console.warn('TronWeb not available, storing hex address as fallback');
+  return hexAddress;
+}
 
 /**
  * Generate a new 12-word BIP-39 mnemonic.
@@ -41,15 +70,8 @@ export function deriveWallets(mnemonic) {
   const tronHDNode = ethers.HDNodeWallet.fromSeed(seed).derivePath("m/44'/195'/0'/0/0");
   const tronPrivateKey = tronHDNode.privateKey.slice(2); // strip 0x
 
-  // Convert EVM-style address to TRON T-address
-  let tronAddress = '';
-  if (typeof window !== 'undefined' && window.TronWeb) {
-    const TronWebConstructor = window.TronWeb?.TronWeb || window.TronWeb;
-    tronAddress = TronWebConstructor.address.fromPrivateKey(tronPrivateKey);
-  } else {
-    // Fallback: just store the hex address; TronWeb will be loaded later
-    tronAddress = tronHDNode.address;
-  }
+  // Convert to TRON T-address
+  const tronAddress = hexToTronAddress(tronHDNode.address, tronPrivateKey);
 
   return {
     tron: {
@@ -74,12 +96,7 @@ export function walletsFromPrivateKey(privateKey) {
 
   const evmWallet = new ethers.Wallet('0x' + cleanKey);
   const evmAddress = evmWallet.address;
-
-  let tronAddress = '';
-  if (typeof window !== 'undefined' && window.TronWeb) {
-    const TronWebConstructor = window.TronWeb?.TronWeb || window.TronWeb;
-    tronAddress = TronWebConstructor.address.fromPrivateKey(cleanKey);
-  }
+  const tronAddress = hexToTronAddress(evmAddress, cleanKey);
 
   return {
     tron: {

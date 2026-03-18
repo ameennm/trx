@@ -9,19 +9,15 @@
     "start": "node dist/index.js",
     "deploy-contract": "npx tsx src/deploy.ts",
     "build:pages": "node esbuild.config.mjs",
-    "deploy:pages": "npx wrangler pages deploy dist-pages --project-name crypxe-api --no-bundle"
+    "deploy:pages": "npx wrangler deploy"
   },
   "dependencies": {
-    "cors": "^2.8.5",
     "dotenv": "^16.4.7",
     "ethers": "^6.13.4",
-    "express": "^4.21.2",
-    "serverless-http": "^4.0.0",
+    "hono": "^4.12.8",
     "tronweb": "^6.0.0"
   },
   "devDependencies": {
-    "@types/cors": "^2.8.17",
-    "@types/express": "^5.0.0",
     "@types/node": "^22.13.0",
     "esbuild": "^0.27.4",
     "esbuild-plugin-polyfill-node": "^0.3.0",

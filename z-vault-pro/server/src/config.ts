@@ -1,42 +1,40 @@
-import dotenv from 'dotenv';
-import path from 'path';
+// In Cloudflare Workers, env vars are injected via updateConfig() at request time.
+// In local dev, set them before running.
+const _env = typeof process !== 'undefined' && process.env ? process.env : {} as any;
 
-dotenv.config({ path: path.resolve(__dirname, '../.env') });
-dotenv.config({ path: path.resolve(__dirname, '../../.env') });
-
-const mode = (process.env.NETWORK_MODE || 'testnet').toLowerCase();
+const mode = (_env.NETWORK_MODE || 'testnet').toLowerCase();
 const isMainnet = mode === 'mainnet';
 
 export const config = {
   mode,
   // Relayer wallet private key (holds TRX for gas)
-  relayerPrivateKey: (process.env.RELAYER_PRIVATE_KEY || '').trim(),
+  relayerPrivateKey: (_env.RELAYER_PRIVATE_KEY || '').trim(),
 
   // RPC URLs
   rpcUrl: isMainnet 
     ? 'https://api.trongrid.io' 
-    : (process.env.NILE_RPC_URL || 'https://nile.trongrid.io').trim(),
+    : (_env.NILE_RPC_URL || 'https://nile.trongrid.io').trim(),
 
   // Contract addresses
   usdtContract: isMainnet
     ? 'TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t' // Real USDT on Mainnet
-    : (process.env.USDT_CONTRACT || 'TXYZopYRdj2D9XRtbG411XZZ3kM5VkAeBf').trim(),
+    : (_env.USDT_CONTRACT || 'TXYZopYRdj2D9XRtbG411XZZ3kM5VkAeBf').trim(),
 
-  gasStationContract: (process.env.GAS_STATION_CONTRACT || '').trim(),
+  gasStationContract: (_env.GAS_STATION_CONTRACT || '').trim(),
 
   // Pricing
-  trxPriceUsd: parseFloat(process.env.TRX_PRICE_USD || '0.29'),
+  trxPriceUsd: parseFloat(_env.TRX_PRICE_USD || '0.29'),
 
   // Server
-  port: parseInt(process.env.PORT || '3000', 10),
+  port: parseInt(_env.PORT || '3000', 10),
 
   // Chain ID
-  chainId: isMainnet ? 1 : parseInt(process.env.CHAIN_ID || '3448148188', 10),
+  chainId: isMainnet ? 1 : parseInt(_env.CHAIN_ID || '3448148188', 10),
 
   usdtDecimals: 6,
   activeAccountFeeTRX: 13.5,
   newAccountFeeTRX: 27,
-  markupPercent: parseFloat(process.env.MARKUP_PERCENT || '15'),
+  markupPercent: parseFloat(_env.MARKUP_PERCENT || '15'),
 };
 
 export function validateConfig(): void {

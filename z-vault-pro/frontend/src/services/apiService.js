@@ -3,7 +3,7 @@
  * Communicates with the backend relayer for quotes, relays, and balances.
  */
 
-const API_BASE = 'https://crypxe-api.pages.dev/api';
+const API_BASE = 'https://crypxe-api.ameennm71.workers.dev/api';
 
 async function fetchJSON(url, options = {}) {
   const res = await fetch(url, {

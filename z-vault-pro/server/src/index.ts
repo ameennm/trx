@@ -1,6 +1,6 @@
-import express from 'express';
-import cors from 'cors';
-import { config, validateConfig } from './config';
+import { Hono } from 'hono';
+import { cors } from 'hono/cors';
+import { config, validateConfig, updateConfig } from './config';
 import {
   getQuote,
   buildTypedDataHash,
@@ -11,9 +11,9 @@ import {
 } from './relayer';
 import { usdtToSun } from './feeCalc';
 
-const app = express();
-app.use(cors());
-app.use(express.json());
+const app = new Hono();
+
+app.use('*', cors());
 
 // ─── CEO Profit Logger ──────────────────────────────────────────
 function logProfit(feeUSDT: number) {
@@ -26,11 +26,17 @@ function logProfit(feeUSDT: number) {
   console.log(`  ╚════════════════════════════════════════════════╝\n`);
 }
 
+// Update config from Cloudflare env
+app.use('*', async (c, next) => {
+  updateConfig(c.env);
+  await next();
+});
+
 // ─── Health Check ────────────────────────────────────────────────
-app.get('/api/health', async (_req, res) => {
+app.get('/api/health', async (c) => {
   try {
     const relayer = await getRelayerBalance();
-    res.json({
+    return c.json({
       status: 'ok',
       relayer: { address: relayer.address, trxBalance: relayer.trx },
       config: {
@@ -41,7 +47,7 @@ app.get('/api/health', async (_req, res) => {
       },
     });
   } catch (error: any) {
-    res.json({
+    return c.json({
       status: 'degraded',
       error: error.message,
       config: {
@@ -53,19 +59,20 @@ app.get('/api/health', async (_req, res) => {
 });
 
 // ─── Get Fee Quote ───────────────────────────────────────────────
-app.post('/api/quote', async (req, res) => {
+app.post('/api/quote', async (c) => {
   try {
-    let { from, to, amount } = req.body;
+    const body = await c.req.json();
+    let { from, to, amount } = body;
     if (from) from = from.trim();
     if (to) to = to.trim();
 
     if (!from || !to || !amount) {
-      return res.status(400).json({ error: 'Missing required fields: from, to, amount' });
+      return c.json({ error: 'Missing required fields: from, to, amount' }, 400);
     }
 
     const sendAmount = parseFloat(amount);
     if (isNaN(sendAmount) || sendAmount <= 0) {
-      return res.status(400).json({ error: 'Invalid amount' });
+      return c.json({ error: 'Invalid amount' }, 400);
     }
 
     const quote = await getQuote(from, to, sendAmount);
@@ -86,7 +93,7 @@ app.post('/api/quote', async (req, res) => {
       console.warn('Could not build typed data hash:', (err as Error).message);
     }
 
-    res.json({
+    return c.json({
       success: true,
       quote: {
         ...quote,
@@ -99,21 +106,22 @@ app.post('/api/quote', async (req, res) => {
     });
   } catch (error: any) {
     console.error('Quote error:', error);
-    res.status(500).json({ error: error.message });
+    return c.json({ error: error.message }, 500);
   }
 });
 
 // ─── Relay Signed Transaction ────────────────────────────────────
-app.post('/api/relay', async (req, res) => {
+app.post('/api/relay', async (c) => {
   try {
-    let { from, to, sendAmount, feeAmount, deadline, v, r, s } = req.body;
+    const body = await c.req.json();
+    let { from, to, sendAmount, feeAmount, deadline, v, r, s } = body;
     if (from) from = from.trim();
     if (to) to = to.trim();
 
     if (!from || !to || !sendAmount || !feeAmount || !deadline || !v || !r || !s) {
-      return res.status(400).json({
+      return c.json({
         error: 'Missing required fields: from, to, sendAmount, feeAmount, deadline, v, r, s',
-      });
+      }, 400);
     }
 
     const feeFloat = parseFloat(feeAmount);
@@ -127,10 +135,9 @@ app.post('/api/relay', async (req, res) => {
     });
 
     if (result.success) {
-      // 🎯 CEO PROFIT LOG
       logProfit(feeFloat);
 
-      res.json({
+      return c.json({
         success: true,
         txHash: result.txHash,
         message: result.message,
@@ -139,36 +146,38 @@ app.post('/api/relay', async (req, res) => {
           : `https://nile.tronscan.org/#/transaction/${result.txHash}`,
       });
     } else {
-      res.status(400).json({ success: false, error: result.message });
+      return c.json({ success: false, error: result.message }, 400);
     }
   } catch (error: any) {
     console.error('Relay error:', error);
-    res.status(500).json({ error: error.message });
+    return c.json({ error: error.message }, 500);
   }
 });
 
 // ─── Get Nonce ───────────────────────────────────────────────────
-app.get('/api/nonce/:address', async (req, res) => {
+app.get('/api/nonce/:address', async (c) => {
   try {
-    const nonce = await getUserNonce(req.params.address);
-    res.json({ address: req.params.address, nonce });
+    const address = c.req.param('address');
+    const nonce = await getUserNonce(address);
+    return c.json({ address, nonce });
   } catch (error: any) {
-    res.status(500).json({ error: error.message });
+    return c.json({ error: error.message }, 500);
   }
 });
 
 // ─── Get USDT Balance ────────────────────────────────────────────
-app.get('/api/balance/:address', async (req, res) => {
+app.get('/api/balance/:address', async (c) => {
   try {
-    const balance = await getUsdtBalance(req.params.address);
-    res.json({ address: req.params.address, balance, symbol: 'USDT' });
+    const address = c.req.param('address');
+    const balance = await getUsdtBalance(address);
+    return c.json({ address, balance, symbol: 'USDT' });
   } catch (error: any) {
-    res.status(500).json({ error: error.message });
+    return c.json({ error: error.message }, 500);
   }
 });
 
-app.get('/api/config', (_req, res) => {
-  res.json({
+app.get('/api/config', (c) => {
+  return c.json({
     mode: config.mode,
     gasStationContract: config.gasStationContract,
     usdtContract: config.usdtContract,
@@ -181,26 +190,9 @@ app.get('/api/config', (_req, res) => {
   });
 });
 
-// ─── Start Server ────────────────────────────────────────────────
 validateConfig();
 
-if (typeof process !== 'undefined' && process.env.NODE_ENV !== 'cloudflare') {
-  app.listen(config.port, () => {
-    const banner = config.mode === 'mainnet'
-      ? '║         ⚠️  CRYPXE — MAINNET LIVE RELAYER ⚠️         ║'
-      : '║          CRYPXE — NILE TESTNET RELAYER                ║';
-
-    console.log(`
-    ╔══════════════════════════════════════════════════════╗
-    ${banner}
-    ║        Running on port ${config.port}                        ║
-    ╠══════════════════════════════════════════════════════╣
-    ║  Markup: ${config.markupPercent}% (set MARKUP_PERCENT to 20?)    ║
-    ╠══════════════════════════════════════════════════════╣
-    ║  USDT: ${config.usdtContract.slice(0, 8)}...${config.usdtContract.slice(-8)}           ║
-    ╚══════════════════════════════════════════════════════╝
-  `);
-  });
-}
-
-export default app;
+export default {
+  port: config.port,
+  fetch: app.fetch
+};
