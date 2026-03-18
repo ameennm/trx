@@ -1,4 +1,4 @@
-import { createContext, useContext, useReducer, useCallback } from 'react';
+import { createContext, useContext, useReducer } from 'react';
 
 const WalletContext = createContext(null);
 
@@ -8,17 +8,16 @@ const initialState = {
   isUnlocked: false,
   mnemonic: null,
   tron: { address: '', privateKey: '' },
-  evm: { address: '', privateKey: '' },
   
   // Balance state
   usdtBalance: 0,
   trxBalance: 0,
   
-  // Network
-  network: 'tron-nile', // 'tron-nile' | 'evm-sepolia'
+  // Network — TRON only
+  network: 'tron-nile',
   
   // UI
-  currentView: 'loading', // 'loading' | 'onboarding' | 'pin-lock' | 'dashboard'
+  currentView: 'loading',
 };
 
 function walletReducer(state, action) {
@@ -31,7 +30,6 @@ function walletReducer(state, action) {
         isCreated: true,
         mnemonic: action.payload.mnemonic || null,
         tron: action.payload.tron,
-        evm: action.payload.evm,
       };
     case 'UNLOCK':
       return { ...state, isUnlocked: true, currentView: 'dashboard' };
@@ -41,7 +39,6 @@ function walletReducer(state, action) {
         isUnlocked: false,
         currentView: 'pin-lock',
         tron: { ...state.tron, privateKey: '' },
-        evm: { ...state.evm, privateKey: '' },
       };
     case 'SET_BALANCES':
       return {

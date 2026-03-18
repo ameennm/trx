@@ -7,15 +7,16 @@ export default function Settings() {
   const { state, dispatch } = useWallet();
   const toast = useToast();
   const [showSeed, setShowSeed] = useState(false);
+  const [showPrivateKey, setShowPrivateKey] = useState(false);
   const [confirmReset, setConfirmReset] = useState(false);
 
   const tronAddr = state.tron.address || '—';
-  const evmAddr = state.evm.address || '—';
+  const tronKey = state.tron.privateKey || '—';
   const truncate = (addr) => addr && addr.length > 16 ? `${addr.slice(0, 10)}···${addr.slice(-6)}` : addr;
 
-  const copyAddr = (addr) => {
-    navigator.clipboard.writeText(addr);
-    toast('info', 'Address copied');
+  const copyText = (text, label) => {
+    navigator.clipboard.writeText(text);
+    toast('info', `${label} copied`);
   };
 
   const handleReset = async () => {
@@ -40,24 +41,41 @@ export default function Settings() {
         <div>
           <h3 className="text-[12px] font-bold uppercase tracking-widest text-text-tertiary mb-3 px-1">Wallet</h3>
           <div className="card p-4 space-y-4">
+            {/* TRON Address */}
             <div className="flex items-center justify-between">
-              <div>
+              <div className="min-w-0 flex-1">
                 <div className="text-[12px] text-text-tertiary mb-1">TRON Address</div>
                 <div className="font-mono text-[13px] font-medium">{truncate(tronAddr)}</div>
               </div>
-              <button onClick={() => copyAddr(tronAddr)} className="icon-btn">
+              <button onClick={() => copyText(tronAddr, 'Address')} className="icon-btn ml-2">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>
               </button>
             </div>
+
             <div className="border-t border-white/[0.04]" />
+
+            {/* Private Key */}
             <div className="flex items-center justify-between">
-              <div>
-                <div className="text-[12px] text-text-tertiary mb-1">EVM Address</div>
-                <div className="font-mono text-[13px] font-medium">{truncate(evmAddr)}</div>
+              <div className="min-w-0 flex-1">
+                <div className="text-[12px] text-text-tertiary mb-1">Private Key</div>
+                <div className="font-mono text-[13px] font-medium break-all">
+                  {showPrivateKey ? tronKey : '••••••••••••••••••••••••'}
+                </div>
               </div>
-              <button onClick={() => copyAddr(evmAddr)} className="icon-btn">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>
-              </button>
+              <div className="flex gap-1 ml-2">
+                <button onClick={() => setShowPrivateKey(!showPrivateKey)} className="icon-btn">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    {showPrivateKey ? (
+                      <><path d="M17.94 17.94A10.07 10.07 0 0112 20c-7 0-11-8-11-8a18.45 18.45 0 015.06-5.94M9.9 4.24A9.12 9.12 0 0112 4c7 0 11 8 11 8a18.5 18.5 0 01-2.16 3.19m-6.72-1.07a3 3 0 11-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></>
+                    ) : (
+                      <><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></>
+                    )}
+                  </svg>
+                </button>
+                <button onClick={() => copyText(tronKey, 'Private key')} className="icon-btn">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>
+                </button>
+              </div>
             </div>
           </div>
         </div>
@@ -119,7 +137,7 @@ export default function Settings() {
           <div className="card p-4 space-y-3">
             <div className="flex justify-between text-[13px]">
               <span className="text-text-secondary">Active Network</span>
-              <span className="font-semibold">{state.network === 'tron-nile' ? 'TRON Nile Testnet' : 'Sepolia Testnet'}</span>
+              <span className="font-semibold">TRON Nile Testnet</span>
             </div>
             <div className="flex justify-between text-[13px]">
               <span className="text-text-secondary">Contract</span>

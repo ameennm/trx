@@ -31,7 +31,7 @@ export default function PinSetup({ mode = 'setup' }) {
         }
         setLoading(true);
         try {
-          await encryptAndStore({ tron: state.tron, evm: state.evm, mnemonic: state.mnemonic }, newPin);
+          await encryptAndStore({ tron: state.tron, mnemonic: state.mnemonic }, newPin);
           dispatch({ type: 'UNLOCK' });
         } catch (err) { toast('error', err.message); }
         setLoading(false);

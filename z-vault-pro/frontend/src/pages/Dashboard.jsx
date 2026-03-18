@@ -9,7 +9,7 @@ export default function Dashboard() {
   const [refreshing, setRefreshing] = useState(false);
   const [serverOnline, setServerOnline] = useState(null);
 
-  const address = state.network === 'tron-nile' ? state.tron.address : state.evm.address;
+  const address = state.tron.address;
 
   const truncate = (addr) => {
     if (!addr) return '...';
@@ -40,7 +40,7 @@ export default function Dashboard() {
       setServerOnline(false);
     }
     setRefreshing(false);
-  }, [address, state.network, state.tron.address, dispatch]);
+  }, [address, state.tron.address, dispatch]);
 
   useEffect(() => { refreshBalances(); }, [refreshBalances]);
 
@@ -100,15 +100,7 @@ export default function Dashboard() {
         </button>
       </div>
 
-      {/* ── Network Toggle ── */}
-      <div className="network-toggle">
-        <button onClick={() => dispatch({ type: 'SET_NETWORK', payload: 'tron-nile' })} className={state.network === 'tron-nile' ? 'active' : 'inactive'}>
-          TRON Nile
-        </button>
-        <button onClick={() => dispatch({ type: 'SET_NETWORK', payload: 'evm-sepolia' })} className={state.network === 'evm-sepolia' ? 'active' : 'inactive'}>
-          Sepolia
-        </button>
-      </div>
+
 
       {/* ── Assets ── */}
       <div className="section-header">

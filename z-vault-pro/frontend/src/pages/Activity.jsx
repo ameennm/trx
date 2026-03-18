@@ -6,7 +6,7 @@ export default function Activity() {
   const [transactions, setTransactions] = useState([]);
   const [loading, setLoading] = useState(true);
 
-  const address = state.network === 'tron-nile' ? state.tron.address : state.evm.address;
+  const address = state.tron.address;
 
   useEffect(() => {
     // Fetch recent TRC-20 transfers from Nile TronGrid API

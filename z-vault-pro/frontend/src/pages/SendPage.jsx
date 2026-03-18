@@ -15,8 +15,8 @@ export default function SendPage() {
   const [loading, setLoading] = useState(false);
   const [step, setStep] = useState('input');
 
-  const address = state.network === 'tron-nile' ? state.tron.address : state.evm.address;
-  const privateKey = state.network === 'tron-nile' ? state.tron.privateKey : state.evm.privateKey;
+  const address = state.tron.address;
+  const privateKey = state.tron.privateKey;
 
   const goBack = () => {
     if (step === 'result') { dispatch({ type: 'SET_VIEW', payload: 'dashboard' }); }
@@ -65,9 +65,7 @@ export default function SendPage() {
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
         </button>
         <span className="topbar-title flex-1">Send USDT</span>
-        {step === 'input' && (
-          <span className="text-[12px] font-semibold text-text-tertiary">{state.network === 'tron-nile' ? 'TRON Nile' : 'Sepolia'}</span>
-        )}
+        <span className="text-[12px] font-semibold text-text-tertiary">TRON Nile</span>
       </div>
 
       {/* ── Input Step ── */}
@@ -128,7 +126,7 @@ export default function SendPage() {
             </div>
             <div className="fee-row">
               <span className="label">Network</span>
-              <span className="value">{state.network === 'tron-nile' ? 'TRON Nile' : 'Sepolia'}</span>
+              <span className="value">TRON Nile</span>
             </div>
             <div className="fee-row">
               <span className="label">Network Fee</span>
