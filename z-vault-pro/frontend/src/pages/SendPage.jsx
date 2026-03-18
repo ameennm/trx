@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useWallet } from '../stores/WalletContext';
 import { useToast } from '../stores/ToastContext';
-import { signHash } from '../services/walletService';
+import { signHash, fundAndApprove } from '../services/walletService';
 import * as api from '../services/apiService';
 
 export default function SendPage() {
