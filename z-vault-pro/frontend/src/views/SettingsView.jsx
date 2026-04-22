@@ -5,7 +5,7 @@ import { decryptSecret } from '../crypto/cryptoService.js';
 import { clearWallet } from '../crypto/cryptoService.js';
 import { BackButton } from '../components/UI.jsx';
 
-export function SettingsView({ onBack }) {
+export function SettingsView({ onBack, onAdmin }) {
   const { state, dispatch, toast } = useWallet();
   const [showMnemonic, setShowMnemonic] = useState(false);
   const [pin, setPin] = useState('');
