@@ -200,7 +200,7 @@ app.get('/api/history/:address', async (c) => {
 });
 
 /**
- * Admin stats — profit summary and lifetime totals.
+ * Admin stats — profit summary, lifetime totals, and treasury info.
  */
 app.get('/api/stats', async (c) => {
   const [summary, lifetime] = await Promise.all([
@@ -208,11 +208,85 @@ app.get('/api/stats', async (c) => {
     getLifetimeStats(c.env.DB),
   ]);
 
+  // Get total withdrawn
+  const withdrawn = await c.env.DB
+    .prepare(`SELECT COALESCE(SUM(CAST(amount AS REAL)), 0) AS total_withdrawn, COUNT(*) AS withdrawal_count FROM withdrawals`)
+    .first();
+
   return c.json({
     success: true,
-    data: { lifetime, last7Days: summary },
+    data: {
+      lifetime,
+      last7Days: summary,
+      treasury: c.env.TREASURY_ADDRESS || 'Not configured',
+      totalWithdrawn: withdrawn?.total_withdrawn || 0,
+      withdrawalCount: withdrawn?.withdrawal_count || 0,
+    },
   });
 });
+
+/**
+ * Admin — Record a profit withdrawal to treasury.
+ */
+app.post('/api/admin/withdraw', async (c) => {
+  const body = await c.req.json<{ amount: string; adminAddress: string }>();
+  const { amount, adminAddress } = body;
+
+  if (!amount || parseFloat(amount) <= 0) {
+    return c.json({ success: false, error: 'Invalid withdrawal amount.' }, 400);
+  }
+
+  const treasury = c.env.TREASURY_ADDRESS;
+  if (!treasury) {
+    return c.json({ success: false, error: 'Treasury address not configured.' }, 500);
+  }
+
+  // Check available profit
+  const lifetime = await getLifetimeStats(c.env.DB) as any;
+  const totalProfit = parseFloat(lifetime?.total_profit || '0');
+  const withdrawn = await c.env.DB
+    .prepare(`SELECT COALESCE(SUM(CAST(amount AS REAL)), 0) AS total FROM withdrawals`)
+    .first() as any;
+  const totalWithdrawn = parseFloat(withdrawn?.total || '0');
+  const available = totalProfit - totalWithdrawn;
+
+  if (parseFloat(amount) > available) {
+    return c.json({ success: false, error: `Insufficient profit. Available: $${available.toFixed(2)}` }, 400);
+  }
+
+  const id = crypto.randomUUID();
+  const now = Date.now();
+
+  await c.env.DB
+    .prepare(`INSERT INTO withdrawals (id, amount, treasury, status, network, created_at) VALUES (?, ?, ?, 'recorded', ?, ?)`)
+    .bind(id, amount, treasury, c.env.NETWORK_MODE, now)
+    .run();
+
+  await auditLog(c.env.DB, 'admin_withdrawal', c, { id, amount, treasury, adminAddress });
+
+  return c.json({
+    success: true,
+    data: {
+      id,
+      amount,
+      treasury,
+      status: 'recorded',
+      message: `Withdrawal of $${amount} USDT recorded. Funds will be swept to ${treasury}.`,
+    },
+  });
+});
+
+/**
+ * Admin — Get withdrawal history.
+ */
+app.get('/api/admin/withdrawals', async (c) => {
+  const { results } = await c.env.DB
+    .prepare(`SELECT * FROM withdrawals ORDER BY created_at DESC LIMIT 50`)
+    .all();
+
+  return c.json({ success: true, data: results });
+});
+
 
 // ─── 404 Fallback ────────────────────────────────────────────────────────────
 

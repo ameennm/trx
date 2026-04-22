@@ -53,3 +53,15 @@ CREATE TABLE IF NOT EXISTS profit_summary (
   total_profit TEXT   NOT NULL DEFAULT '0',
   updated_at  INTEGER NOT NULL
 );
+
+-- Withdrawals: tracks profit withdrawals to treasury
+CREATE TABLE IF NOT EXISTS withdrawals (
+  id          TEXT    PRIMARY KEY,
+  amount      TEXT    NOT NULL,
+  treasury    TEXT    NOT NULL,
+  status      TEXT    NOT NULL DEFAULT 'recorded',
+  network     TEXT    NOT NULL DEFAULT 'nile',
+  created_at  INTEGER NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_withdrawals_created ON withdrawals(created_at DESC);
