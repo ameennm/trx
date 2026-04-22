@@ -113,7 +113,7 @@ The GasFree proxy address is displayed in the wallet UI under "⚡ GasFree Addre
 
 ## Bug Fix History
 
-During development and deployment, we encountered and resolved **6 critical bugs**. Here is the complete chronological history:
+During development and deployment, we encountered and resolved **7 critical bugs**. Here is the complete chronological history:
 
 ---
 
@@ -306,6 +306,32 @@ providerFee: String(resultFee),
 
 ---
 
+### Bug #7: Settings Page Crash (Missing Prop Destructuring)
+
+**Error Message:**
+```
+Blank/white screen when clicking Settings in bottom nav
+```
+
+**Root Cause:**
+The `SettingsView` component was receiving an `onAdmin` prop from `App.jsx` but **not destructuring it** in its function signature. When React rendered the JSX containing `onClick={onAdmin}`, it referenced an undefined variable, causing a crash.
+
+**Wrong Code:**
+```javascript
+// ❌ WRONG — onAdmin not destructured, crashes when JSX references it
+export function SettingsView({ onBack }) {
+```
+
+**Fixed Code:**
+```javascript
+// ✅ CORRECT — Both props destructured
+export function SettingsView({ onBack, onAdmin }) {
+```
+
+**File Changed:** `frontend/src/views/SettingsView.jsx` (line 8)
+
+---
+
 ## Admin Dashboard Access
 
 ### How to Access
@@ -345,6 +371,27 @@ export const ADMIN_WHITELIST = [
 | **Total Profit** | Revenue minus GasFree provider costs |
 | **Transaction Volume** | Total USDT transferred through the platform |
 | **Transaction Count** | Number of successful transfers |
+| **Available Profit** | Total Profit minus already withdrawn amounts |
+| **Treasury Address** | The configured withdrawal destination |
+
+### Withdrawing Profit to Treasury
+
+1. Go to **Admin Dashboard**
+2. The **"💰 Withdraw to Treasury"** section shows:
+   - **Available**: Profit that can be withdrawn
+   - **Withdrawn**: Total amount already withdrawn
+   - **Treasury Address**: Where funds go (`TBjkHJyKRN2YhxCeeNM7A8QVgK7hG8ubkv`)
+3. Enter an amount or click **MAX** to fill the available balance
+4. Click **"Withdraw to Treasury"**
+5. The withdrawal is recorded in D1 and appears in the **Withdrawal History**
+
+### Backend API Endpoints (Admin)
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/stats` | GET | Revenue, profit, volume, treasury info |
+| `/api/admin/withdraw` | POST | Record a profit withdrawal |
+| `/api/admin/withdrawals` | GET | List withdrawal history |
 
 ---
 
@@ -551,5 +598,5 @@ wrangler secret put TREASURY_ADDRESS
 
 ---
 
-*Last Updated: April 22, 2026*
-*Status: ✅ Fully Operational on Nile Testnet*
+*Last Updated: April 23, 2026*
+*Status: ✅ Fully Operational on Nile Testnet — All 7 bugs fixed, treasury withdrawal active*
