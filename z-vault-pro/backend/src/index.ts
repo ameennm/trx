@@ -137,12 +137,13 @@ app.post('/api/relay', rateLimiter, async (c) => {
 
     // 4. Extract result fields (GasFree may use different field names)
     const txHash = result.txHash || (result as any).traceId || (result as any).transactionHash || (result as any).hash || txId;
-    const resultFee = result.fee || (result as any).actualFee || '0';
 
     // 5. Calculate profit margin
-    const platformFee = parseFloat(c.env.PLATFORM_FEE_USDT);
-    const providerFee = parseFloat(resultFee);
-    const profit = (platformFee - providerFee).toFixed(6);
+    //    GasFree API does NOT return the provider fee in the submit response.
+    //    We use GASFREE_BASE_FEE (configured in wrangler.toml) as the known provider cost.
+    const platformFee = parseFloat(c.env.PLATFORM_FEE_USDT);        // 1.10
+    const providerFee = parseFloat(c.env.GASFREE_BASE_FEE || '1.00'); // 1.00
+    const profit = (platformFee - providerFee).toFixed(6);           // 0.10
 
     // 6. Log success to D1
     await logTransaction(c.env.DB, {
@@ -151,7 +152,7 @@ app.post('/api/relay', rateLimiter, async (c) => {
       recipient,
       amount,
       fee: c.env.PLATFORM_FEE_USDT,
-      providerFee: String(resultFee),
+      providerFee: String(providerFee),
       profit,
       txHash: String(txHash),
       network,

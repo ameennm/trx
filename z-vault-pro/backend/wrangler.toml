@@ -1,0 +1,29 @@
+name = "z-vault-pro-api"
+main = "src/index.ts"
+compatibility_date = "2025-01-01"
+compatibility_flags = ["nodejs_compat"]
+
+[vars]
+NETWORK_MODE = "testnet"
+GASFREE_PROVIDER_URL_TESTNET = "https://open-test.gasfree.io/nile"
+GASFREE_PROVIDER_URL_MAINNET = "https://open.gasfree.io/tron"
+# Nile Testnet USDT contract (TRC-20)
+USDT_CONTRACT_TESTNET = "TXYZopYRdj2D9XRtbG411XZZ3kM5VkAeBf"
+# Mainnet USDT contract
+USDT_CONTRACT_MAINNET = "TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t"
+PLATFORM_FEE_USDT = "1.10"
+# What GasFree provider actually charges per transfer (used for profit calc)
+GASFREE_BASE_FEE = "1.00"
+
+# Secret vars — set via: wrangler secret put GASFREE_API_KEY
+# GASFREE_API_KEY = ""
+# GASFREE_API_SECRET = ""
+# TREASURY_ADDRESS = ""
+
+[[d1_databases]]
+binding = "DB"
+database_name = "z-vault-pro-db"
+database_id = "72c28dc1-51bb-410f-a65b-0c3c0aeb3d51"
+
+[dev]
+port = 8787
