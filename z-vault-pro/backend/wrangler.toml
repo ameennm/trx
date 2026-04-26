@@ -4,21 +4,47 @@ compatibility_date = "2025-01-01"
 compatibility_flags = ["nodejs_compat"]
 
 [vars]
-NETWORK_MODE = "testnet"
-GASFREE_PROVIDER_URL_TESTNET = "https://open-test.gasfree.io/nile"
-GASFREE_PROVIDER_URL_MAINNET = "https://open.gasfree.io/tron"
-# Nile Testnet USDT contract (TRC-20)
-USDT_CONTRACT_TESTNET = "TXYZopYRdj2D9XRtbG411XZZ3kM5VkAeBf"
-# Mainnet USDT contract
-USDT_CONTRACT_MAINNET = "TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t"
-PLATFORM_FEE_USDT = "1.10"
-# What GasFree provider actually charges per transfer (used for profit calc)
-GASFREE_BASE_FEE = "1.00"
+# ✅ TESTNET — switch to 'mainnet' only after deploying ZVaultRelayer.sol to Mainnet
+NETWORK_MODE = "mainnet"
 
-# Secret vars — set via: wrangler secret put GASFREE_API_KEY
-# GASFREE_API_KEY = ""
-# GASFREE_API_SECRET = ""
-# TREASURY_ADDRESS = ""
+# Netts.io Energy Aggregator
+NETTS_API_URL = "https://netts.io/apiv2"
+
+# Feee.io Fallback Energy API
+FEEE_API_URL = "https://api.feee.io"
+
+# USDT Contracts
+USDT_CONTRACT_TESTNET = "TXYZopYRdj2D9XRtbG411XZZ3kM5VkAeBf"
+USDT_CONTRACT_MAINNET = "TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t"
+
+# ZVaultRelayer Contract Addresses
+# ✅ Nile Testnet: deployed
+RELAYER_CONTRACT_TESTNET = "TZ2KnAvkher2xBdWk5j6SQvH9Amyoz1pz5"
+# ⚠️ Mainnet: NOT YET DEPLOYED. Deploy ZVaultRelayer.sol then update this.
+RELAYER_CONTRACT_MAINNET = "TZ2KnAvkher2xBdWk5j6SQvH9Amyoz1pz5"
+
+# Relayer Wallet Address (The one that broadcasts TXs and needs energy)
+RELAYER_ADDRESS = "TYbhLzARFg6HnV3FBFiA68etPwKXtLisVZ"
+
+# Dynamic Fee Slabs
+FEE_THRESHOLD_USDT = "5000.00"
+FEE_TIER_1_USDT = "1.00"
+FEE_TIER_2_USDT = "2.00"
+ACTIVATION_FEE_USDT = "2.00"
+
+# Internal cost baseline (avg energy rental cost in USDT)
+GASFREE_BASE_FEE = "0.60"
+
+# RPC
+MAINNET_RPC_URL = "https://api.trongrid.io"
+USHT_CONTRACT = "TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t"
+
+# Secrets — set via: wrangler secret put <NAME>
+# RELAYER_PRIVATE_KEY   → private key of the relayer wallet (never hardcode!)
+# TREASURY_ADDRESS      → wallet that receives fees
+# NETTS_API_KEY         → Netts.io API key
+# VPS_PROXY_URL         → https://your-domain.com/rent
+# VPS_SHARED_SECRET     → random 32+ char string, validated by VPS Express server
 
 [[d1_databases]]
 binding = "DB"

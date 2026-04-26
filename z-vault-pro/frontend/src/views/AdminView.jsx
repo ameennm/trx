@@ -13,11 +13,17 @@ export function AdminView({ onBack }) {
 
   const backend = NETWORKS[state.network].apiBackend;
 
+  // Admin auth headers — required by backend adminAuth middleware
+  const adminHeaders = {
+    'Content-Type': 'application/json',
+    'x-admin-address': state.address,
+  };
+
   async function fetchData() {
     try {
       const [statsRes, wdRes] = await Promise.all([
-        fetch(`${backend}/api/stats`),
-        fetch(`${backend}/api/admin/withdrawals`),
+        fetch(`${backend}/api/stats`, { headers: adminHeaders }),
+        fetch(`${backend}/api/admin/withdrawals`, { headers: adminHeaders }),
       ]);
       const statsData = await statsRes.json();
       const wdData = await wdRes.json();
@@ -30,7 +36,7 @@ export function AdminView({ onBack }) {
     }
   }
 
-  useEffect(() => { fetchData(); }, [state.network]);
+  useEffect(() => { fetchData(); }, [state.network, state.address]);
 
   const totalProfit = parseFloat(stats?.lifetime?.total_profit || '0');
   const totalWithdrawn = parseFloat(stats?.totalWithdrawn || '0');
@@ -46,7 +52,7 @@ export function AdminView({ onBack }) {
     try {
       const res = await fetch(`${backend}/api/admin/withdraw`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: adminHeaders,
         body: JSON.stringify({ amount: withdrawAmount, adminAddress: state.address }),
       });
       const data = await res.json();

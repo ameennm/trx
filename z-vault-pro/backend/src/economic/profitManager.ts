@@ -1,33 +1,33 @@
 /**
  * Z-Vault Pro — Profit Management Engine
- * Implements the $1.00 Flat Fee logic and Dynamic Arbitrage calculation.
+ * Calculates net profit per transaction based on real cost basis.
+ *
+ * Revenue model:
+ *   User pays: $1.00 USDT (tier 1) or $2.00 USDT (tier 2)
+ *   Platform cost: ~$0.60 USDT (energy rental via Netts.io, set in GASFREE_BASE_FEE)
+ *   Net profit: Revenue - Cost = ~$0.40 USDT per transaction
  */
-
-const REVENUE_PER_TX_USDT = 1.00; // Hardcoded $1.00 rule
-const TRX_PRICE_MOCK = 0.05;      // Mocked for arbitrage calc: $0.05/TRX
 
 /**
- * Log institutional arbitrage and net profit.
- * Formula: 1.00 USDT - (Base Cost TRX * TRX Price)
+ * Calculate and log the profit for a completed transaction.
+ * @param platformFee - What the user paid (USDT)
+ * @param providerCost - What energy rental cost (USDT, from GASFREE_BASE_FEE)
  */
-export function logArbitrage(baseCostTrx: number) {
-  const wholesaleCostUsdt = baseCostTrx * TRX_PRICE_MOCK;
-  const netProfitUsdt = REVENUE_PER_TX_USDT - wholesaleCostUsdt;
-
+export function logArbitrage(platformFee: number, providerCost: number) {
+  const netProfit = platformFee - providerCost;
   const timestamp = new Date().toISOString();
-  
+
   console.log(`\n  ╔════════════════════════════════════════════════╗`);
-  console.log(`  ║ [CEO LOG] Transfer Complete                     ║`);
-  console.log(`  ║ 🔹 Revenue:      ${REVENUE_PER_TX_USDT.toFixed(2)} USDT             ║`);
-  console.log(`  ║ 🔹 Wholesale:    ${baseCostTrx.toFixed(2)} TRX              ║`);
-  console.log(`  ║ 🔹 Cost basis:   ${wholesaleCostUsdt.toFixed(2)} USDT             ║`);
-  console.log(`  ║ 💰 Net Profit:   ${netProfitUsdt.toFixed(2)} USDT             ║`);
-  console.log(`  ║ 🕒 Timestamp:    ${timestamp}       ║`);
+  console.log(`  ║ [Z-Vault] Transaction Profit Log               ║`);
+  console.log(`  ║ 🔹 Platform Fee: $${platformFee.toFixed(2)} USDT                ║`);
+  console.log(`  ║ 🔹 Energy Cost:  $${providerCost.toFixed(2)} USDT                ║`);
+  console.log(`  ║ 💰 Net Profit:   $${netProfit.toFixed(2)} USDT                ║`);
+  console.log(`  ║ 🕒 Time:         ${timestamp} ║`);
   console.log(`  ╚════════════════════════════════════════════════╝\n`);
 
   return {
-    revenue: REVENUE_PER_TX_USDT,
-    cost: baseCostTrx,
-    profit: netProfitUsdt
+    revenue: platformFee,
+    cost: providerCost,
+    profit: netProfit,
   };
 }

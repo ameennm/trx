@@ -68,6 +68,7 @@ export async function logFailedTransaction(
   userAddress: string,
   recipient: string,
   amount: string,
+  fee: string,
   error: string,
   network: string,
 ): Promise<void> {
@@ -76,9 +77,9 @@ export async function logFailedTransaction(
     .prepare(
       `INSERT INTO transactions
         (id, user_address, recipient, amount, fee, status, network, created_at, updated_at)
-       VALUES (?, ?, ?, ?, '1.00', 'failed', ?, ?, ?)`,
+       VALUES (?, ?, ?, ?, ?, 'failed', ?, ?, ?)`
     )
-    .bind(txId, userAddress, recipient, amount, network, now, now)
+    .bind(txId, userAddress, recipient, amount, fee, network, now, now)
     .run();
 
   // Also write to audit log

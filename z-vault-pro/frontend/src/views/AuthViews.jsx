@@ -56,7 +56,7 @@ export function OnboardView({ onSwitch }) {
           Z-Vault <span style={{ color: 'var(--primary)' }}>Pro</span>
         </h1>
         <p className="text-muted text-sm" style={{ marginTop: 6 }}>
-          Gasless USDT · Non-Custodial · $1 Flat Fee
+          Gasless USDT · Non-Custodial · Dynamic Fees
         </p>
       </div>
 
@@ -209,7 +209,7 @@ export function ImportView({ onBack }) {
       const m = words.join(' ').trim();
       if (!validateMnemonic(m)) { toast('error', 'Invalid seed phrase. Check each word.'); return; }
     } else {
-      if (privateKey.length < 64) { toast('error', 'Invalid Private Key. Must be 64 characters.'); return; }
+      if (privateKey.length !== 64) { toast('error', 'Invalid Private Key. Must be exactly 64 hex characters.'); return; }
       try {
         await deriveTronWalletFromKey(privateKey); // Final check
       } catch (e) {
@@ -303,7 +303,7 @@ export function ImportView({ onBack }) {
           <button 
             className="btn btn-primary btn-full" 
             onClick={handleValidate} 
-            disabled={importType === 'mnemonic' ? words.some(w => !w) : privateKey.length < 64}
+            disabled={importType === 'mnemonic' ? words.some(w => !w) : privateKey.length !== 64}
           >
             Verify {importType === 'mnemonic' ? 'Phrase' : 'Key'}
           </button>

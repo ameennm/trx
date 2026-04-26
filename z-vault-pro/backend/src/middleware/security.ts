@@ -12,22 +12,57 @@ import type { Context, Next } from 'hono';
 // TRON address pattern (base58, starts with T, 34 chars)
 const TRON_ADDRESS_RE = /^T[1-9A-HJ-NP-Za-km-z]{33}$/;
 
+// Allowed origins — add your Cloudflare Pages domain here
+const ALLOWED_ORIGINS = [
+  'https://z-vault-pro.pages.dev',
+  'https://z-vault-pro-frontend.pages.dev',
+  'http://localhost:5173', // Vite dev server
+  'http://localhost:4173', // Vite preview
+];
+
 /**
  * CORS middleware — allows frontend to call the Worker API.
  */
 export async function cors(c: Context, next: Next) {
-  const origin = c.req.header('Origin') || '*';
+  const requestOrigin = c.req.header('Origin') || '';
+  const isAllowed = ALLOWED_ORIGINS.includes(requestOrigin);
+  
+  // Reflect only if allowed; otherwise don't set CORS headers (browser will block)
+  const origin = isAllowed ? requestOrigin : ALLOWED_ORIGINS[0];
 
-  // Allow any origin in dev; lock this to your Vercel domain in production
   c.header('Access-Control-Allow-Origin', origin);
   c.header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-  c.header('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+  c.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, x-admin-address');
   c.header('Access-Control-Max-Age', '86400');
 
   if (c.req.method === 'OPTIONS') {
     return c.body(null, 204);
   }
 
+  await next();
+}
+
+/**
+ * Admin authentication middleware.
+ * Verifies that the x-admin-address header matches the treasury or a whitelisted admin.
+ */
+export async function adminAuth(c: Context, next: Next) {
+  const adminAddress = c.req.header('x-admin-address');
+  
+  // The env type might not have TREASURY_ADDRESS defined explicitly here but it's passed at runtime
+  const envTreasury = (c.env as any).TREASURY_ADDRESS;
+  
+  const allowed = [
+    envTreasury,
+    'TJBpgUDZEhyJ3GmgAM8DUdFoPCxfWZPuaX', // Testing account
+    'TBjkHJyKRN2YhxCeeNM7A8QVgK7hG8ubkv', // Legacy treasury account
+    'TYbhLzARFg6HnV3FBFiA68etPwKXtLisVZ'  // Active treasury account
+  ].filter(Boolean);
+
+  if (!adminAddress || !allowed.includes(adminAddress)) {
+    // If we wanted we could audit log here, but we don't have DB type imported easily, so just reject
+    return c.json({ success: false, error: 'Unauthorized: Admin access required.' }, 401);
+  }
   await next();
 }
 

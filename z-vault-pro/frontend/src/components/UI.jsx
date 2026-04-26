@@ -68,7 +68,7 @@ export function GasFreeBadge() {
   return (
     <div className="gas-badge">
       <span className="gas-dot" />
-      GasFree
+      Relayer Active
     </div>
   );
 }
@@ -92,7 +92,18 @@ export function TransactionItem({ tx }) {
   const time = ts ? new Date(ts).toLocaleDateString('en', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '';
 
   return (
-    <div className="tx-item">
+    <div 
+      className="tx-item" 
+      onClick={() => {
+        const hash = tx.tx_hash || tx.id || tx.traceId || tx.transactionHash;
+        if (hash) {
+          window.open(`https://tronscan.org/#/transaction/${hash}`, '_blank');
+        } else {
+          console.log("No hash available for this tx:", tx);
+        }
+      }}
+      style={{ cursor: 'pointer' }}
+    >
       <div className={`tx-icon ${iconCls}`}>{icon}</div>
       <div style={{ flex: 1, minWidth: 0 }}>
         <div className="flex justify-between items-center">

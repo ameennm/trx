@@ -14,13 +14,15 @@ export function DashboardView({ onNavigate }) {
       const b = await getBalances(state.address, state.network);
       dispatch({ type: 'SET_BALANCES', payload: b });
     } catch {
-      // Silently fail — testnet RPC can be flaky
+      // Silently fail
     } finally {
       setRefreshing(false);
     }
   }, [state.address, state.network, dispatch]);
 
   useEffect(() => { fetchBalances(); }, [state.address, state.network, fetchBalances]);
+
+  const hasVaultBalance = parseFloat(state.balances.proxyUsdt) > 0;
 
   return (
     <div className="page z-1 flex-col gap-5">
@@ -35,33 +37,63 @@ export function DashboardView({ onNavigate }) {
         <GasFreeBadge />
       </div>
 
-      {/* Balance Card */}
-      <div className="glass-card p-6 text-center animate-in delay-1" style={{ background: 'linear-gradient(135deg, rgba(108,99,255,0.12) 0%, rgba(0,212,170,0.07) 100%)', position: 'relative', overflow: 'hidden' }}>
-        <div style={{ position: 'absolute', top: -40, right: -40, width: 140, height: 140, background: 'var(--primary)', borderRadius: '50%', filter: 'blur(60px)', opacity: 0.2 }} />
-        <p className="label" style={{ marginBottom: 12 }}>Total USDT Balance</p>
-        <div className="flex items-end justify-center gap-2" style={{ lineHeight: 1 }}>
-          <span className="balance-big">{state.balances.usdt}</span>
-          <span className="balance-currency">USDT</span>
+      {/* Main Wallet Balance Card */}
+      <div className="glass-card p-5 animate-in delay-1" style={{ background: 'rgba(255,255,255,0.03)' }}>
+        <div className="flex justify-between items-start">
+          <div>
+            <p className="label text-tiny">Main Wallet</p>
+            <div className="flex items-end gap-1" style={{ marginTop: 4 }}>
+              <span style={{ fontSize: 24, fontWeight: 800 }}>{state.balances.usdt}</span>
+              <span className="text-muted text-tiny" style={{ marginBottom: 4 }}>USDT</span>
+            </div>
+          </div>
+          <div className="text-right">
+             <p className="text-muted text-tiny">{state.balances.trx} TRX</p>
+          </div>
         </div>
-        <div className="flex items-center justify-center gap-2" style={{ marginTop: 12 }}>
-          <span className="text-muted text-sm">{state.balances.trx} TRX</span>
-          <span className="text-muted text-tiny">·</span>
-          <span className="text-muted text-tiny" title="TRX not needed for GasFree transfers" style={{ cursor: 'help' }}>
-            ✨ Not needed for transfers
-          </span>
-        </div>
-        <div style={{ marginTop: 14 }}>
+        <div style={{ marginTop: 12 }}>
           <AddressDisplay address={state.address} />
         </div>
-        <button onClick={fetchBalances} disabled={refreshing} className="btn btn-sm btn-ghost" style={{ marginTop: 10 }}>
-          {refreshing ? <div className="spinner" style={{ width: 12, height: 12, borderWidth: 2 }} /> : '⟳'} Refresh
-        </button>
+      </div>
+
+      {/* Proxy/Vault Balance Card */}
+      <div className="glass-card p-6 text-center animate-in delay-2" style={{ 
+        background: hasVaultBalance 
+          ? 'linear-gradient(135deg, rgba(0,229,160,0.1) 0%, rgba(108,99,255,0.05) 100%)' 
+          : 'rgba(255,255,255,0.02)',
+        border: hasVaultBalance ? '1px solid rgba(0,229,160,0.3)' : '1px solid rgba(255,255,255,0.1)'
+      }}>
+        <p className="label" style={{ marginBottom: 8, color: hasVaultBalance ? 'var(--gas-green)' : 'var(--text-secondary)' }}>
+          {hasVaultBalance ? '✅ Gasless Vault Ready' : '📦 Gasless Vault Balance'}
+        </p>
+        <div className="flex items-end justify-center gap-2" style={{ lineHeight: 1 }}>
+          <span className="balance-big" style={{ fontSize: 42 }}>{state.balances.proxyUsdt}</span>
+          <span className="balance-currency">USDT</span>
+        </div>
+        
+        {!hasVaultBalance && (
+          <div style={{ marginTop: 16 }}>
+            <p className="text-muted text-tiny" style={{ marginBottom: 12 }}>
+              Your gasless vault is empty. Deposit USDT to start sending without TRX.
+            </p>
+            <button className="btn btn-primary btn-sm w-full" onClick={() => onNavigate('send', { mode: 'deposit' })}>
+              ⚡ Top Up Vault
+            </button>
+          </div>
+        )}
+
+        <div style={{ marginTop: 10 }}>
+           <button onClick={fetchBalances} disabled={refreshing} className="btn btn-xs btn-ghost text-muted">
+            {refreshing ? '...' : '⟳ Refresh Box'}
+          </button>
+        </div>
       </div>
 
       {/* Quick Actions */}
-      <div className="flex gap-3 animate-in delay-2">
-        <button className="btn btn-primary flex-col" style={{ flex: 1, height: 80, borderRadius: 'var(--radius-lg)', fontSize: 12, gap: 6 }} onClick={() => onNavigate('send')}>
-          <span style={{ fontSize: 22 }}>↗</span> Send
+      <div className="flex gap-3 animate-in delay-3">
+        <button className="btn btn-primary flex-col" style={{ flex: 1, height: 80, borderRadius: 'var(--radius-lg)', fontSize: 12, gap: 6 }} 
+          onClick={() => onNavigate('send')} disabled={!hasVaultBalance}>
+          <span style={{ fontSize: 22 }}>↗</span> {hasVaultBalance ? 'Send Gasless' : 'Vault Empty'}
         </button>
         <button className="btn btn-ghost flex-col" style={{ flex: 1, height: 80, borderRadius: 'var(--radius-lg)', fontSize: 12, gap: 6, borderWidth: 1 }} onClick={() => onNavigate('receive')}>
           <span style={{ fontSize: 22 }}>↙</span> Receive
@@ -71,43 +103,16 @@ export function DashboardView({ onNavigate }) {
         </button>
       </div>
 
-      {/* GasFree Info Banner */}
-      <div className="glass-card p-4 animate-in delay-3" style={{ background: 'var(--gas-green-dim)', borderColor: 'rgba(0,229,160,0.2)' }}>
+      <div className="glass-card p-4 animate-in delay-4" style={{ background: 'var(--gas-green-dim)', borderColor: 'rgba(0,229,160,0.2)' }}>
         <div className="flex items-center gap-3">
-          <span style={{ fontSize: 24 }}>⚡</span>
+          <span style={{ fontSize: 24 }}>🛡️</span>
           <div>
-            <p style={{ fontSize: 13, fontWeight: 700, color: 'var(--gas-green)' }}>GasFree Protocol Active</p>
-            <p className="text-muted text-tiny" style={{ marginTop: 2 }}>Send USDT with $1.10 flat fee. No TRX needed.</p>
+            <p style={{ fontSize: 13, fontWeight: 700, color: 'var(--gas-green)' }}>Safe & Private</p>
+            <p className="text-muted text-tiny" style={{ marginTop: 2 }}>Only you can authorize transfers from your vault.</p>
           </div>
         </div>
       </div>
-
-      {/* Recent transactions preview */}
-      {state.transactions.length > 0 && (
-        <div className="animate-in delay-4">
-          <div className="flex justify-between items-center" style={{ marginBottom: 12 }}>
-            <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-secondary)' }}>Recent Activity</span>
-            <button onClick={() => onNavigate('history')} style={{ background: 'none', border: 'none', color: 'var(--primary)', fontSize: 12, cursor: 'pointer', fontWeight: 600 }}>View all</button>
-          </div>
-          <div className="flex-col gap-2">
-            {state.transactions.slice(0, 3).map((tx, i) => (
-              <div key={i} className="tx-item">
-                <div className={`tx-icon ${tx.type === 'send' ? 'tx-icon-send' : 'tx-icon-receive'}`}>
-                  {tx.type === 'send' ? '↗' : '↙'}
-                </div>
-                <div style={{ flex: 1 }}>
-                  <div className="flex justify-between">
-                    <span style={{ fontSize: 13, fontWeight: 600 }}>{tx.type === 'send' ? 'Sent' : 'Received'}</span>
-                    <span style={{ fontWeight: 800, color: tx.type === 'send' ? 'var(--text-primary)' : 'var(--gas-green)' }}>
-                      {tx.type === 'send' ? '-' : '+'}{tx.amount} USDT
-                    </span>
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
     </div>
   );
 }
+

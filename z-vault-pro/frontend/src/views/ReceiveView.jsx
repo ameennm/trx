@@ -1,14 +1,20 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { QRCodeSVG } from 'qrcode.react';
 import { useWallet } from '../store/useWallet';
-import { getGasFreeAddress } from '../gasfree/gasfreeService.js';
+import { getRelayerAddress } from '../gasfree/gasfreeService.js';
 import { BackButton, AddressDisplay } from '../components/UI.jsx';
 
 export function ReceiveView({ onBack }) {
   const { state, toast } = useWallet();
   const [showGasFree, setShowGasFree] = useState(false);
+  const [gasFreeAddr, setGasFreeAddr] = useState('');
 
-  const gasFreeAddr = state.address ? getGasFreeAddress(state.address, state.network) : '';
+  useEffect(() => {
+    if (state.address) {
+      getRelayerAddress(state.address, state.network).then(setGasFreeAddr).catch(console.error);
+    }
+  }, [state.address, state.network]);
+
   const displayAddr = showGasFree ? gasFreeAddr : state.address;
 
   function copyAddress() {

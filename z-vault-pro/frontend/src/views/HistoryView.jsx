@@ -27,8 +27,9 @@ export function HistoryView({ onBack }) {
         }));
 
         // Deduplicate: prefer GasFree records over chain records by tx_hash
-        const gfHashes = new Set(backendTxs.map(t => t.tx_hash || ''));
-        const filteredChain = chainTxs.filter(t => !gfHashes.has(t.id));
+        // Only add real (non-empty) hashes to the dedup set
+        const gfHashes = new Set(backendTxs.map(t => t.tx_hash).filter(Boolean));
+        const filteredChain = chainTxs.filter(t => t.id && !gfHashes.has(t.id));
 
         const merged = [...backendTxs, ...filteredChain].sort((a, b) => (b.created_at || b.timestamp || 0) - (a.created_at || a.timestamp || 0));
         setTxs(merged);

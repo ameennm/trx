@@ -1,12 +1,8 @@
 import { Hono } from 'hono';
 import type { Env } from './worker-types.js';
-import { cors, validateRelayBody, checkBlacklist, auditLog } from './middleware/security.js';
+import { cors, validateRelayBody, checkBlacklist, auditLog, adminAuth } from './middleware/security.js';
 import { rateLimiter } from './middleware/rateLimiter.js';
-import {
-  getAccountInfo,
-  getSupportedTokens,
-  submitGasFreeTransfer,
-} from './services/gasfreeProxy.js';
+import { submitInternalRelay } from './services/relayerService.js';
 import {
   logTransaction,
   logFailedTransaction,
@@ -21,9 +17,9 @@ import {
  *
  * Routes:
  *   GET  /api/health           — Service health check
- *   GET  /api/nonce/:address   — Proxy GasFree nonce fetch
- *   GET  /api/config/tokens    — Proxy supported token list
- *   POST /api/relay            — Accept TIP-712 sig, validate, forward to GasFree, log
+ *   GET  /api/nonce/:address   — Nonce endpoint (frontend fetches from contract directly)
+ *   GET  /api/config/tokens    — Token configuration
+ *   POST /api/relay            — Accept TIP-712 sig, validate, rent energy, broadcast
  *   GET  /api/history/:address — User transaction history from D1
  *   GET  /api/stats            — Profit & volume stats (admin)
  */
@@ -37,52 +33,60 @@ app.use('*', cors);
 
 // ─── Routes ─────────────────────────────────────────────────────────────────
 
-/**
- * Health check — confirms service is alive and shows network mode.
- */
 app.get('/api/health', (c) => {
   const isMainnet = c.env.NETWORK_MODE === 'mainnet';
   return c.json({
     service: 'Z-Vault Pro API',
-    version: '2.0.0',
+    version: '2.2.0',
     status: 'operational',
     network: c.env.NETWORK_MODE,
     usdtContract: isMainnet
       ? c.env.USDT_CONTRACT_MAINNET
       : c.env.USDT_CONTRACT_TESTNET,
-    platformFee: c.env.PLATFORM_FEE_USDT,
+    fees: {
+      threshold: c.env.FEE_THRESHOLD_USDT || '5000',
+      tier1: c.env.FEE_TIER_1_USDT || '1.00',
+      tier2: c.env.FEE_TIER_2_USDT || '2.00',
+      activation: c.env.ACTIVATION_FEE_USDT || '2.00'
+    },
     timestamp: new Date().toISOString(),
   });
 });
 
 /**
- * Nonce fetch — proxy to GasFree provider.
- * Frontend needs the nonce before assembling the TIP-712 message.
+ * Nonce fetch — backward compatibility endpoint.
+ * The frontend now fetches nonces directly from the smart contract,
+ * but this endpoint is kept for API completeness.
  */
 app.get('/api/nonce/:address', async (c) => {
   const address = c.req.param('address');
-
-  try {
-    const account = await getAccountInfo(c.env, address);
-    return c.json({ success: true, data: account });
-  } catch (err: unknown) {
-    const msg = err instanceof Error ? err.message : 'Unknown error';
-    return c.json({ success: false, error: msg }, 502);
-  }
+  return c.json({ success: true, data: { address, nonce: '0', activated: true } });
 });
 
 /**
- * Token config — proxy to GasFree provider.
- * Returns supported tokens and their current fees.
+ * Token config — returns the supported token and current fee structure.
+ * No longer proxies to GasFree; returns static config from env.
  */
-app.get('/api/config/tokens', async (c) => {
-  try {
-    const tokens = await getSupportedTokens(c.env);
-    return c.json({ success: true, data: tokens });
-  } catch (err: unknown) {
-    const msg = err instanceof Error ? err.message : 'Unknown error';
-    return c.json({ success: false, error: msg }, 502);
-  }
+app.get('/api/config/tokens', (c) => {
+  const isMainnet = c.env.NETWORK_MODE === 'mainnet';
+  const usdtContract = isMainnet
+    ? c.env.USDT_CONTRACT_MAINNET
+    : c.env.USDT_CONTRACT_TESTNET;
+
+  return c.json({
+    success: true,
+    data: [
+      {
+        contract: usdtContract,
+        symbol: 'USDT',
+        decimals: 6,
+        transferFee: c.env.FEE_TIER_1_USDT || '1.00',
+        activationFee: c.env.ACTIVATION_FEE_USDT || '2.00',
+        feeThreshold: c.env.FEE_THRESHOLD_USDT || '5000',
+        transferFeeAboveThreshold: c.env.FEE_TIER_2_USDT || '2.00',
+      }
+    ],
+  });
 });
 
 /**
@@ -92,9 +96,10 @@ app.get('/api/config/tokens', async (c) => {
  *  1. Rate limit check (max 10 req/min per IP)
  *  2. Validate request body (addresses + signature + message)
  *  3. Check recipient against blacklist
- *  4. Forward signed TIP-712 to GasFree provider
- *  5. Log transaction + profit margin to D1
- *  6. Return tx hash to frontend
+ *  4. Rent energy via Netts.io (or simulate on testnet)
+ *  5. Broadcast signed TIP-712 via TronWeb to the TRON chain
+ *  6. Log transaction + profit margin to D1
+ *  7. Return tx hash to frontend
  */
 app.post('/api/relay', rateLimiter, async (c) => {
   const body = await c.req.json().catch(() => null);
@@ -132,26 +137,22 @@ app.post('/api/relay', rateLimiter, async (c) => {
   const network = c.env.NETWORK_MODE;
 
   try {
-    // 3. Submit to GasFree provider
-    const result = await submitGasFreeTransfer(c.env, signature, message);
+    // 3. Submit to Internal Relayer (Energy Rental + TronWeb Broadcast)
+    const result = await submitInternalRelay(c.env, signature, message);
+    const txHash = result.txHash;
 
-    // 4. Extract result fields (GasFree may use different field names)
-    const txHash = result.txHash || (result as any).traceId || (result as any).transactionHash || (result as any).hash || txId;
+    // 4. Calculate profit margin
+    const platformFee = parseFloat(message.maxFee) / 1_000_000;
+    const providerFee = result.providerFee; 
+    const profit = (platformFee - providerFee).toFixed(6);
 
-    // 5. Calculate profit margin
-    //    GasFree API does NOT return the provider fee in the submit response.
-    //    We use GASFREE_BASE_FEE (configured in wrangler.toml) as the known provider cost.
-    const platformFee = parseFloat(c.env.PLATFORM_FEE_USDT);        // 1.10
-    const providerFee = parseFloat(c.env.GASFREE_BASE_FEE || '1.00'); // 1.00
-    const profit = (platformFee - providerFee).toFixed(6);           // 0.10
-
-    // 6. Log success to D1
+    // 5. Log success to D1
     await logTransaction(c.env.DB, {
       txId,
       userAddress,
       recipient,
       amount,
-      fee: c.env.PLATFORM_FEE_USDT,
+      fee: String(platformFee),
       providerFee: String(providerFee),
       profit,
       txHash: String(txHash),
@@ -169,17 +170,54 @@ app.post('/api/relay', rateLimiter, async (c) => {
       txHash: String(txHash),
       txId,
       profit: `$${profit}`,
-      message: 'GasFree transfer submitted successfully.',
+      message: 'Z-Vault Relayer transfer submitted successfully.',
     });
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : 'Unknown error';
 
+    const platformFee = message.maxFee ? parseFloat(message.maxFee) / 1_000_000 : 1.00;
     // Log failure
-    await logFailedTransaction(c.env.DB, txId, userAddress, recipient, amount, msg, network);
+    await logFailedTransaction(c.env.DB, txId, userAddress, recipient, amount, String(platformFee), msg, network);
 
     return c.json({ success: false, error: msg }, 500);
   }
 });
+
+/**
+ * Rent Deposit Energy endpoint
+ * Rents 65,000 energy from Netts.io directly to the user's Main Wallet.
+ * This allows the "Top Up Vault" transaction (which is a standard TRC20 transfer) to be gasless.
+ */
+app.post(
+  '/api/rent-deposit',
+  rateLimiter,
+  async (c) => {
+    try {
+      const body = await c.req.json();
+      const { userAddress } = body;
+
+      if (!userAddress || !/^T[1-9A-HJ-NP-Za-km-z]{33}$/.test(userAddress)) {
+        return c.json({ success: false, message: 'Invalid user address' }, 400);
+      }
+
+      // Rent 65,000 energy for a standard TRC20 transfer
+      const energyNeeded = 65000;
+      console.log(`[Rent-Deposit] Renting ${energyNeeded} energy to ${userAddress} for Top Up...`);
+      
+      const { rentEnergy } = await import('./services/feeeRental.js');
+      
+      await rentEnergy(c.env, energyNeeded, userAddress);
+
+      return c.json({
+        success: true,
+        message: 'Energy rented successfully for deposit'
+      });
+    } catch (error: any) {
+      console.error('[Rent-Deposit] Failed:', error);
+      return c.json({ success: false, message: error.message || 'Energy rental failed' }, 500);
+    }
+  }
+);
 
 /**
  * Transaction history — returns user's tx records from D1.
@@ -203,7 +241,7 @@ app.get('/api/history/:address', async (c) => {
 /**
  * Admin stats — profit summary, lifetime totals, and treasury info.
  */
-app.get('/api/stats', async (c) => {
+app.get('/api/stats', adminAuth, async (c) => {
   const [summary, lifetime] = await Promise.all([
     getProfitSummary(c.env.DB, 7),
     getLifetimeStats(c.env.DB),
@@ -229,7 +267,7 @@ app.get('/api/stats', async (c) => {
 /**
  * Admin — Record a profit withdrawal to treasury.
  */
-app.post('/api/admin/withdraw', async (c) => {
+app.post('/api/admin/withdraw', adminAuth, async (c) => {
   const body = await c.req.json<{ amount: string; adminAddress: string }>();
   const { amount, adminAddress } = body;
 
@@ -280,7 +318,7 @@ app.post('/api/admin/withdraw', async (c) => {
 /**
  * Admin — Get withdrawal history.
  */
-app.get('/api/admin/withdrawals', async (c) => {
+app.get('/api/admin/withdrawals', adminAuth, async (c) => {
   const { results } = await c.env.DB
     .prepare(`SELECT * FROM withdrawals ORDER BY created_at DESC LIMIT 50`)
     .all();

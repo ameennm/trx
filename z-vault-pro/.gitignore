@@ -1,5 +1,32 @@
+# ─── Dependencies ─────────────────────────────────────────────────────────────
 node_modules/
+.pnp
+.pnp.js
+
+# ─── Build outputs ────────────────────────────────────────────────────────────
 dist/
+build/
+.wrangler/
+*.tsbuildinfo
+
+# ─── Environment & Secrets ────────────────────────────────────────────────────
 .env
-*.log
+.env.local
+.env.*.local
+.dev.vars            # Wrangler local dev secrets
+
+# ─── Scratch & Test files with sensitive data ─────────────────────────────────
+# ⚠️  These may contain private keys — NEVER commit them
+scratch/
+frontend/test*.js
+frontend/test*.ts
+
+# ─── OS & Editor ──────────────────────────────────────────────────────────────
 .DS_Store
+Thumbs.db
+.idea/
+.vscode/settings.json
+
+# ─── Logs ─────────────────────────────────────────────────────────────────────
+*.log
+npm-debug.log*

@@ -8,7 +8,7 @@ export const INITIAL_STATE = {
   balances: { usdt: '0.00', trx: '0.00' },
   transactions: [],
   mode: 'onboard', 
-  network: 'nile',
+  network: 'mainnet',
   autoLockMinutes: 5,
   loading: false,
   toast: null,

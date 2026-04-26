@@ -26,8 +26,15 @@ const NavIcons = {
 function AppInner() {
   const { state, dispatch } = useWallet();
   const [activeView, setActiveView] = useState('home'); // within dashboard
+  const [activeViewParams, setActiveViewParams] = useState({});
   const [authMode, setAuthMode] = useState('check'); // 'check'|'onboard'|'import'
   const [initializing, setInitializing] = useState(true);
+
+  // Helper for navigating with params
+  const navigateTo = (view, params = {}) => {
+    setActiveView(view);
+    setActiveViewParams(params);
+  };
 
   // On mount: check if a wallet exists in IndexedDB
   useEffect(() => {
@@ -92,14 +99,15 @@ function AppInner() {
 
   function renderView() {
     switch (activeView) {
-      case 'send':     return <SendView onBack={() => setActiveView('home')} />;
-      case 'receive':  return <ReceiveView onBack={() => setActiveView('home')} />;
-      case 'history':  return <HistoryView onBack={() => setActiveView('home')} />;
-      case 'settings': return <SettingsView onBack={() => setActiveView('home')} onAdmin={() => setActiveView('admin')} />;
-      case 'admin':    return <AdminView onBack={() => setActiveView('settings')} />;
-      default:         return <DashboardView onNavigate={setActiveView} />;
+      case 'send':     return <SendView onBack={() => navigateTo('home')} params={activeViewParams} />;
+      case 'receive':  return <ReceiveView onBack={() => navigateTo('home')} />;
+      case 'history':  return <HistoryView onBack={() => navigateTo('home')} />;
+      case 'settings': return <SettingsView onBack={() => navigateTo('home')} onAdmin={() => navigateTo('admin')} />;
+      case 'admin':    return <AdminView onBack={() => navigateTo('settings')} />;
+      default:         return <DashboardView onNavigate={navigateTo} />;
     }
   }
+
 
   return (
     <div className="app-shell">
