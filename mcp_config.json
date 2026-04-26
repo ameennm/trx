@@ -1,0 +1,13 @@
+{
+  "mcp_version": "1.0",
+  "project_name": "TRON-Dual-Monetization",
+  "endpoints": {
+    "nile_testnet": "https://nile.trongrid.io",
+    "mainnet": "https://api.trongrid.io",
+    "gasfree_api": "https://open-test.gasfree.io/nile/"
+  },
+  "configurations": {
+    "network_mode": "testnet",
+    "usdt_contract": "TXYZopYRdj2D9XRtbG411XZZ3kM5VkAeBf"
+  }
+}
