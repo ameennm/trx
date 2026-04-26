@@ -23,8 +23,8 @@ RELAYER_CONTRACT_TESTNET = "TZ2KnAvkher2xBdWk5j6SQvH9Amyoz1pz5"
 # ⚠️ Mainnet: NOT YET DEPLOYED. Deploy ZVaultRelayer.sol then update this.
 RELAYER_CONTRACT_MAINNET = "TZ2KnAvkher2xBdWk5j6SQvH9Amyoz1pz5"
 
-# Relayer Wallet Address (The one that broadcasts TXs and needs energy)
-RELAYER_ADDRESS = "TYbhLzARFg6HnV3FBFiA68etPwKXtLisVZ"
+# Relayer Wallet Address (must match ZVaultRelayer.authorizedRelayer)
+RELAYER_ADDRESS = "TMju4dk4gfs2nyiocnaJjTdQTHK1EYH89N"
 
 # Dynamic Fee Slabs
 FEE_THRESHOLD_USDT = "5000.00"

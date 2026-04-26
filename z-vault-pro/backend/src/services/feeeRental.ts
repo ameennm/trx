@@ -16,11 +16,11 @@ export async function rentEnergy(env: Env, energyAmount: number, recipientAddres
   const apiKey = env.NETTS_API_KEY;
   if (!apiKey) throw new Error('NETTS_API_KEY is missing');
 
-  // If no recipient is provided, it defaults to the treasury/relayer address
-  const treasury = env.TREASURY_ADDRESS;
-  if (!treasury) throw new Error('TREASURY_ADDRESS is missing');
+  // For relayed contract calls, energy must be delegated to the broadcaster.
+  const relayerAddress = env.RELAYER_ADDRESS;
+  if (!relayerAddress) throw new Error('RELAYER_ADDRESS is missing');
   
-  const targetAddress = recipientAddress || treasury;
+  const targetAddress = recipientAddress || relayerAddress;
 
   try {
     const vpsProxyUrl = env.VPS_PROXY_URL;
@@ -58,4 +58,3 @@ export async function rentEnergy(env: Env, energyAmount: number, recipientAddres
     throw new Error(`Energy rental failed: ${error.message}`);
   }
 }
-

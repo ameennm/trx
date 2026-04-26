@@ -173,6 +173,13 @@ export async function executeGasFreeTransfer({
   // Use a temporary TronWeb instance for signing
   const pk = privateKey.startsWith('0x') ? privateKey.slice(2) : privateKey;
   const tronWeb = new TronWeb({ fullHost: NETWORKS[network].rpcUrl, privateKey: pk });
+  const signingAddress = TronWeb.address.fromPrivateKey(pk);
+  if (signingAddress !== userAddress) {
+    throw new Error(
+      `Wallet mismatch: this session is showing ${userAddress}, but the private key signs as ` +
+      `${signingAddress}. Lock/unlock or re-import the correct wallet before sending.`
+    );
+  }
   const signature = await tronWeb.trx._signTypedData(domain, types, message);
 
   // Step 6: Submit to our Cloudflare Worker backend
