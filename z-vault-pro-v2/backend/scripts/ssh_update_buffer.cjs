@@ -9,9 +9,11 @@ for (const key of ['VPS_HOST', 'VPS_USER', 'VPS_PASSWORD']) {
 
 const conn = new Client();
 conn.on('ready', () => {
-  conn.exec('ls -la /var/www/trx', (err, stream) => {
+  console.log('Client :: ready');
+  conn.exec(`sed -i "s/RELAYER_TRX_BUFFER=.*/RELAYER_TRX_BUFFER=10/" /var/www/trx/z-vault-pro-v2/backend/.env && pm2 restart z-vault-backend`, (err, stream) => {
     if (err) throw err;
     stream.on('close', (code, signal) => {
+      console.log('Stream :: close :: code: ' + code + ', signal: ' + signal);
       conn.end();
     }).on('data', (data) => {
       console.log('STDOUT: ' + data);

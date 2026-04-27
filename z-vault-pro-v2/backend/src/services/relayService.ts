@@ -50,6 +50,21 @@ function usdtToSunNumber(amountUsdt: number) {
   return BigInt(Math.round(amountUsdt * 1_000_000));
 }
 
+function trxToSunNumber(amountTrx: number) {
+  return BigInt(Math.round(amountTrx * 1_000_000));
+}
+
+async function ensureRelayerTrxBuffer() {
+  const balanceSun = BigInt(await tronWeb.trx.getBalance(appConfig.RELAYER_ADDRESS));
+  const requiredSun = trxToSunNumber(appConfig.RELAYER_TRX_BUFFER);
+
+  if (balanceSun < requiredSun) {
+    throw new Error(
+      `Relayer TRX buffer too low: ${Number(balanceSun) / 1_000_000} TRX available, ${appConfig.RELAYER_TRX_BUFFER} TRX required`
+    );
+  }
+}
+
 async function waitForReceipt(txHash: string) {
   for (let attempt = 0; attempt < 40; attempt += 1) {
     const info = await tronWeb.trx.getTransactionInfo(txHash).catch(() => null) as any;
@@ -296,6 +311,8 @@ export async function submitRelay(rawInput: unknown) {
       }
       insertRelayEvent(requestId, 'relay_preflight_fallback', { message: String(error?.message || error) });
     }
+
+    await ensureRelayerTrxBuffer();
 
     const rentResult = await rentEnergy({
       recipientAddress: appConfig.RELAYER_ADDRESS,

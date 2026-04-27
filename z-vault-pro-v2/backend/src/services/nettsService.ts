@@ -25,6 +25,7 @@ export async function rentEnergy(params: {
     headers: {
       'Content-Type': 'application/json',
       'X-API-KEY': appConfig.NETTS_API_KEY,
+      'X-Real-IP': appConfig.NETTS_REAL_IP,
       'X-Correlation-Id': params.correlationId
     },
     body: JSON.stringify({
@@ -43,10 +44,12 @@ export async function rentEnergy(params: {
   }
 
   if (!response.ok) {
-    throw new Error(data.msg || data.error || `Netts API failed with ${response.status}`);
+    const detailMessage = typeof data.detail === 'string' ? data.detail : data.detail?.msg;
+    throw new Error(detailMessage || data.msg || data.error || `Netts API failed with ${response.status}`);
   }
 
-  if (typeof data.code !== 'undefined' && ![0, 200].includes(Number(data.code))) {
+  const providerCode = typeof data.code !== 'undefined' ? data.code : data.detail?.code;
+  if (typeof providerCode !== 'undefined' && ![0, 200, 10000].includes(Number(providerCode))) {
     throw new Error(data.msg || data.error || `Netts rejected request with code ${data.code}`);
   }
 

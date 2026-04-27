@@ -1,5 +1,12 @@
 const { Client } = require('ssh2');
 
+for (const key of ['VPS_HOST', 'VPS_USER', 'VPS_PASSWORD']) {
+  if (!process.env[key]) {
+    console.error(`Missing required env var: ${key}`);
+    process.exit(1);
+  }
+}
+
 const conn = new Client();
 conn.on('ready', () => {
   console.log('Client :: ready');
@@ -32,8 +39,8 @@ conn.on('ready', () => {
     });
   });
 }).connect({
-  host: '187.127.156.137',
-  port: 22,
-  username: 'root',
-  password: 'Ameen@2026@Zpruners'
+  host: process.env.VPS_HOST,
+  port: Number(process.env.VPS_PORT || 22),
+  username: process.env.VPS_USER,
+  password: process.env.VPS_PASSWORD
 });
