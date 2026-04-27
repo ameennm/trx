@@ -1,7 +1,10 @@
 import cors from 'cors';
+import { setDefaultResultOrder } from 'node:dns';
 import express from 'express';
 import { appConfig } from './config.js';
 import { relayRouter } from './routes/relay.js';
+
+setDefaultResultOrder('ipv4first');
 
 const app = express();
 
