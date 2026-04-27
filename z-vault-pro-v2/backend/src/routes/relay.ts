@@ -14,7 +14,9 @@ relayRouter.get('/health', (_req, res) => {
     treasuryAddress: appConfig.TREASURY_ADDRESS,
     platformFeeUsdt: appConfig.PLATFORM_FEE_USDT,
     firstSendFeeUsdt: appConfig.FIRST_SEND_FEE_USDT,
-    energyProviderMode: appConfig.ENERGY_PROVIDER_MODE
+    energyProviderMode: appConfig.ENERGY_PROVIDER_MODE,
+    energyStandardTransfer: appConfig.ENERGY_STANDARD_TRANSFER,
+    energyFirstTransfer: appConfig.ENERGY_FIRST_TRANSFER
   });
 });
 
@@ -29,7 +31,9 @@ relayRouter.get('/config', (_req, res) => {
     network: appConfig.NETWORK,
     chainId: appConfig.NETWORK === 'mainnet' ? 0x2b6653dc : 0xcd8690dc,
     rpcUrl: appConfig.TRONGRID_RPC_URL,
-    energyProviderMode: appConfig.ENERGY_PROVIDER_MODE
+    energyProviderMode: appConfig.ENERGY_PROVIDER_MODE,
+    energyStandardTransfer: appConfig.ENERGY_STANDARD_TRANSFER,
+    energyFirstTransfer: appConfig.ENERGY_FIRST_TRANSFER
   });
 });
 

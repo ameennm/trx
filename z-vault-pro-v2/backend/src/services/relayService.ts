@@ -344,10 +344,10 @@ export async function submitRelay(rawInput: unknown) {
       { type: 'bytes32', value: s }
     ];
 
-    let energyTarget = 65000;
+    let energyTarget = appConfig.ENERGY_STANDARD_TRANSFER;
     const vaultDeployed = vault.deployed;
     if (!vaultDeployed) {
-      energyTarget = 131000;
+      energyTarget = appConfig.ENERGY_FIRST_TRANSFER;
     }
 
     try {
@@ -374,6 +374,7 @@ export async function submitRelay(rawInput: unknown) {
       amount: energyTarget,
       correlationId: input.correlationId
     });
+    logEvent('relay_energy_rented', { requestId, correlationId: input.correlationId, energyTarget, rentResult });
     updateRelayRequest(requestId, 'energy_rented');
     insertRelayEvent(requestId, 'relay_energy_rented', { rentResult, energyTarget });
     failureStatus = 'broadcast_rejected';
@@ -422,6 +423,7 @@ export async function submitRelay(rawInput: unknown) {
     failureStatus = 'reverted';
     updateRelayRequest(requestId, 'broadcasted', { txHash });
     insertRelayEvent(requestId, 'relay_broadcasted', { txHash, broadcast });
+    logEvent('relay_broadcasted', { requestId, correlationId: input.correlationId, txHash });
 
     const receipt = await waitForReceipt(txHash);
     if (!receipt) {
@@ -436,6 +438,7 @@ export async function submitRelay(rawInput: unknown) {
 
     updateRelayRequest(requestId, 'confirmed', { txHash });
     insertRelayEvent(requestId, 'relay_confirmed', { txHash, receipt });
+    logEvent('relay_confirmed', { requestId, correlationId: input.correlationId, txHash });
 
     return {
       requestId,
@@ -447,6 +450,7 @@ export async function submitRelay(rawInput: unknown) {
     const message = String(error?.message || error);
     updateRelayRequest(requestId, failureStatus, { errorMessage: message });
     insertRelayEvent(requestId, 'relay_failed', { status: failureStatus, message });
+    logEvent('relay_failed', { requestId, correlationId: input.correlationId, status: failureStatus, message });
     throw error;
   }
 }

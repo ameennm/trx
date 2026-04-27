@@ -21,7 +21,9 @@ const envSchema = z.object({
   TREASURY_ADDRESS: z.string().min(34),
   PLATFORM_FEE_USDT: z.coerce.number().default(1),
   FIRST_SEND_FEE_USDT: z.coerce.number().default(3),
-  RELAYER_TRX_BUFFER: z.coerce.number().default(10)
+  RELAYER_TRX_BUFFER: z.coerce.number().default(10),
+  ENERGY_STANDARD_TRANSFER: z.coerce.number().default(160000),
+  ENERGY_FIRST_TRANSFER: z.coerce.number().default(260000)
 }).superRefine((env, ctx) => {
   if (env.ENERGY_PROVIDER_MODE === 'netts' && !env.NETTS_API_KEY) {
     ctx.addIssue({
