@@ -45,7 +45,9 @@ export async function rentEnergy(params: {
 
   if (!response.ok) {
     const detailMessage = typeof data.detail === 'string' ? data.detail : data.detail?.msg;
-    throw new Error(detailMessage || data.msg || data.error || `Netts API failed with ${response.status}`);
+    const errorMsg = detailMessage || data.msg || data.error || `Netts API failed with ${response.status}`;
+    console.error(`[Netts Error] Status: ${response.status}, Data:`, JSON.stringify(data));
+    throw new Error(errorMsg);
   }
 
   const providerCode = typeof data.code !== 'undefined' ? data.code : data.detail?.code;
