@@ -1,7 +1,14 @@
 import { nanoid } from 'nanoid';
 import { db } from '../db/database.js';
 
-export type RelayStatus = 'received' | 'preflight_failed' | 'energy_rented' | 'broadcast_rejected' | 'reverted' | 'confirmed';
+export type RelayStatus =
+  | 'received'
+  | 'preflight_failed'
+  | 'energy_rented'
+  | 'broadcasted'
+  | 'broadcast_rejected'
+  | 'reverted'
+  | 'confirmed';
 
 export interface RelayRequestRow {
   id: string;
@@ -100,5 +107,15 @@ export function listHistory(userAddress: string) {
     WHERE user_address = ?
     ORDER BY created_at DESC
     LIMIT 50
+  `).all(userAddress);
+}
+
+export function listBroadcastedHistory(userAddress: string) {
+  return db.prepare<[string], RelayHistoryRow>(`
+    SELECT id, recipient, amount_sun, fee_sun, status, tx_hash, created_at, updated_at
+    FROM relay_requests
+    WHERE user_address = ? AND status = 'broadcasted' AND tx_hash IS NOT NULL
+    ORDER BY created_at DESC
+    LIMIT 20
   `).all(userAddress);
 }

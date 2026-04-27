@@ -11,7 +11,7 @@ import {
 import { deriveWalletFromPrivateKey, generateNewWallet, signRelayTransfer } from '../lib/wallet';
 import { StatusPill } from '../components/StatusPill';
 
-type RelayState = 'idle' | 'validating' | 'signing' | 'preflight' | 'broadcasting' | 'confirmed' | 'failed';
+type RelayState = 'idle' | 'validating' | 'signing' | 'preflight' | 'broadcasting' | 'broadcasted' | 'confirmed' | 'failed';
 type View = 'home' | 'send' | 'history' | 'settings';
 
 const TX_URLS: Record<string, string> = {
@@ -217,8 +217,16 @@ export function App() {
         throw new Error(result.error || 'Relay failed');
       }
 
-      setStatus('confirmed');
-      setMessage(`Confirmed tx: ${result.txHash}`);
+      if (result.status === 'confirmed') {
+        setStatus('confirmed');
+        setMessage(`Confirmed tx: ${result.txHash}`);
+      } else if (result.status === 'broadcasted') {
+        setStatus('broadcasted');
+        setMessage(`Broadcasted tx: ${result.txHash}. Refresh history for confirmation.`);
+      } else {
+        setStatus('failed');
+        setMessage(`Relay returned ${result.status || 'unknown status'}`);
+      }
       await refreshWalletState(walletAddress);
     } catch (error: any) {
       setStatus('failed');

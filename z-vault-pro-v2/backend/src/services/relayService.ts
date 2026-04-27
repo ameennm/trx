@@ -2,7 +2,14 @@ import { z } from 'zod';
 import { appConfig } from '../config.js';
 import { logEvent } from '../lib/logger.js';
 import { computeTronVaultAddress, deriveRelayerAddress, normalizeTronAddress, relayerAbi, tronWeb } from '../lib/tron.js';
-import { createRelayRequest, getRelayRequestByIdempotencyKey, insertRelayEvent, updateRelayRequest } from './repository.js';
+import {
+  createRelayRequest,
+  getRelayRequestByIdempotencyKey,
+  insertRelayEvent,
+  listBroadcastedHistory,
+  listHistory,
+  updateRelayRequest
+} from './repository.js';
 import { rentEnergy } from './nettsService.js';
 
 const requestSchema = z.object({
@@ -37,6 +44,22 @@ function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+async function withTimeout<T>(operation: Promise<T>, ms: number, label: string): Promise<T> {
+  let timer: NodeJS.Timeout | undefined;
+  try {
+    return await Promise.race([
+      operation,
+      new Promise<T>((_, reject) => {
+        timer = setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms);
+      })
+    ]);
+  } finally {
+    if (timer) {
+      clearTimeout(timer);
+    }
+  }
+}
+
 function toSunAmount(amountUsdt: string) {
   if (!/^\d+(\.\d{1,6})?$/.test(amountUsdt)) {
     throw new Error('Amount must be a positive USDT value with up to 6 decimals');
@@ -65,8 +88,8 @@ async function ensureRelayerTrxBuffer() {
   }
 }
 
-async function waitForReceipt(txHash: string) {
-  for (let attempt = 0; attempt < 40; attempt += 1) {
+async function waitForReceipt(txHash: string, attempts = 20) {
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
     const info = await tronWeb.trx.getTransactionInfo(txHash).catch(() => null) as any;
     if (info && Object.keys(info).length > 0) {
       const result = info.receipt?.result || info.result;
@@ -77,7 +100,31 @@ async function waitForReceipt(txHash: string) {
     }
     await sleep(2000);
   }
-  throw new Error(`Broadcast accepted but no confirmed receipt yet for ${txHash}`);
+  return null;
+}
+
+async function reconcileBroadcastedRequest(row: { id: string; tx_hash: string | null }) {
+  if (!row.tx_hash) {
+    return;
+  }
+
+  const info = await tronWeb.trx.getTransactionInfo(row.tx_hash).catch(() => null) as any;
+  if (!info || Object.keys(info).length === 0) {
+    return;
+  }
+
+  const result = info.receipt?.result || info.result;
+  if (!result || result === 'SUCCESS') {
+    updateRelayRequest(row.id, 'confirmed', { txHash: row.tx_hash });
+    insertRelayEvent(row.id, 'relay_confirmed_late', { txHash: row.tx_hash, receipt: info });
+    return;
+  }
+
+  updateRelayRequest(row.id, 'reverted', {
+    txHash: row.tx_hash,
+    errorMessage: `On-chain execution reverted: ${result}`
+  });
+  insertRelayEvent(row.id, 'relay_reverted_late', { txHash: row.tx_hash, receipt: info });
 }
 
 async function preflightConstantCall(params: {
@@ -137,6 +184,12 @@ async function getVaultInfo(userAddress: string) {
 
 export async function getVaultStatus(userAddress: string) {
   return getVaultInfo(userAddress);
+}
+
+export async function getRelayHistory(userAddress: string) {
+  const pending = listBroadcastedHistory(userAddress);
+  await Promise.all(pending.map((row) => reconcileBroadcastedRequest(row)));
+  return listHistory(userAddress);
 }
 
 export async function submitRelay(rawInput: unknown) {
@@ -227,6 +280,8 @@ export async function submitRelay(rawInput: unknown) {
     recipient: input.recipient,
     vaultAddress
   });
+
+  let failureStatus: 'preflight_failed' | 'broadcast_rejected' | 'reverted' = 'preflight_failed';
 
   try {
     const signingAddress = tronWeb.trx.verifyTypedData(
@@ -321,24 +376,41 @@ export async function submitRelay(rawInput: unknown) {
     });
     updateRelayRequest(requestId, 'energy_rented');
     insertRelayEvent(requestId, 'relay_energy_rented', { rentResult, energyTarget });
+    failureStatus = 'broadcast_rejected';
 
-    const trigger = await tronWeb.transactionBuilder.triggerSmartContract(
-      appConfig.RELAYER_CONTRACT,
-      relayFunction,
-      {
-        feeLimit: 100_000_000,
-        callValue: 0
-      },
-      parameters,
-      appConfig.RELAYER_ADDRESS
-    ) as any;
+    // Netts usually delivers instantly, but first-time/activation orders can take a few seconds
+    // to become visible to the next TronGrid resource check.
+    await sleep(6000);
+
+    const trigger = await withTimeout<any>(
+      tronWeb.transactionBuilder.triggerSmartContract(
+        appConfig.RELAYER_CONTRACT,
+        relayFunction,
+        {
+          feeLimit: 100_000_000,
+          callValue: 0
+        },
+        parameters,
+        appConfig.RELAYER_ADDRESS
+      ) as Promise<any>,
+      25_000,
+      'Relay transaction build'
+    );
 
     if (!trigger.result?.result || !trigger.transaction) {
       throw new Error(`Failed to build relay transaction`);
     }
 
-    const signed = await tronWeb.trx.sign(trigger.transaction, appConfig.RELAYER_PRIVATE_KEY);
-    const broadcast = await tronWeb.trx.sendRawTransaction(signed) as any;
+    const signed = await withTimeout(
+      tronWeb.trx.sign(trigger.transaction, appConfig.RELAYER_PRIVATE_KEY),
+      10_000,
+      'Relay transaction signing'
+    );
+    const broadcast = await withTimeout(
+      tronWeb.trx.sendRawTransaction(signed),
+      25_000,
+      'Relay transaction broadcast'
+    ) as any;
     if (!broadcast.result) {
       updateRelayRequest(requestId, 'broadcast_rejected', {
         errorMessage: broadcast.message ? tronWeb.toUtf8(broadcast.message) : 'broadcast rejected'
@@ -347,7 +419,21 @@ export async function submitRelay(rawInput: unknown) {
     }
 
     const txHash = signed.txID as string;
+    failureStatus = 'reverted';
+    updateRelayRequest(requestId, 'broadcasted', { txHash });
+    insertRelayEvent(requestId, 'relay_broadcasted', { txHash, broadcast });
+
     const receipt = await waitForReceipt(txHash);
+    if (!receipt) {
+      insertRelayEvent(requestId, 'relay_confirmation_pending', { txHash });
+      return {
+        requestId,
+        txHash,
+        status: 'broadcasted',
+        duplicate: false
+      };
+    }
+
     updateRelayRequest(requestId, 'confirmed', { txHash });
     insertRelayEvent(requestId, 'relay_confirmed', { txHash, receipt });
 
@@ -359,8 +445,8 @@ export async function submitRelay(rawInput: unknown) {
     };
   } catch (error: any) {
     const message = String(error?.message || error);
-    updateRelayRequest(requestId, 'preflight_failed', { errorMessage: message });
-    insertRelayEvent(requestId, 'relay_preflight_failed', { message });
+    updateRelayRequest(requestId, failureStatus, { errorMessage: message });
+    insertRelayEvent(requestId, 'relay_failed', { status: failureStatus, message });
     throw error;
   }
 }

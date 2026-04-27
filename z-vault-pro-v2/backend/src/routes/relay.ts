@@ -1,6 +1,5 @@
 import { Router } from 'express';
-import { listHistory } from '../services/repository.js';
-import { getVaultStatus, submitRelay } from '../services/relayService.js';
+import { getRelayHistory, getVaultStatus, submitRelay } from '../services/relayService.js';
 import { appConfig } from '../config.js';
 import { rateLimit } from '../middleware/rateLimit.js';
 
@@ -52,6 +51,11 @@ relayRouter.post('/relay', rateLimit({ windowMs: 60_000, max: 12 }), async (req,
   }
 });
 
-relayRouter.get('/history/:userAddress', (req, res) => {
-  res.json({ success: true, rows: listHistory(req.params.userAddress) });
+relayRouter.get('/history/:userAddress', async (req, res, next) => {
+  try {
+    const rows = await getRelayHistory(req.params.userAddress);
+    res.json({ success: true, rows });
+  } catch (error) {
+    next(error);
+  }
 });
