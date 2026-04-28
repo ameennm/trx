@@ -16,6 +16,7 @@ type RelayState = 'idle' | 'validating' | 'signing' | 'preflight' | 'broadcastin
 type View = 'home' | 'send' | 'receive' | 'history' | 'settings';
 type HistoryFilter = 'all' | 'sent' | 'received';
 const LANDING_SESSION_KEY = 'z-vault-pro-entered';
+const VAULT_ADDRESS_CACHE_PREFIX = 'z-vault-pro-vault-address:';
 
 const TX_URLS: Record<string, string> = {
   nile: 'https://nile.tronscan.org/#/transaction/',
@@ -86,6 +87,20 @@ function formatDate(ts?: number) {
   });
 }
 
+function vaultAddressCacheKey(address: string) {
+  return `${VAULT_ADDRESS_CACHE_PREFIX}${address}`;
+}
+
+function readCachedVaultAddress(address: string) {
+  if (!address) return '';
+  return localStorage.getItem(vaultAddressCacheKey(address)) || '';
+}
+
+function cacheVaultAddress(address: string, vaultAddress?: string) {
+  if (!address || !vaultAddress) return;
+  localStorage.setItem(vaultAddressCacheKey(address), vaultAddress);
+}
+
 export function App() {
   const [privateKey, setPrivateKey] = useState('');
   const [walletAddress, setWalletAddress] = useState('');
@@ -105,8 +120,9 @@ export function App() {
   const [config, setConfig] = useState<any>(null);
   const [view, setView] = useState<View>('home');
   const [enteredWallet, setEnteredWallet] = useState(() => hasStoredWallet() || sessionStorage.getItem(LANDING_SESSION_KEY) === '1');
+  const [cachedVaultAddress, setCachedVaultAddress] = useState('');
 
-  const vaultAddress = vault?.vaultAddress || '';
+  const vaultAddress = vault?.vaultAddress || cachedVaultAddress;
   const feeUsdt = String(vault?.deployed ? (config?.platformFeeUsdt ?? 1.2) : (config?.firstSendFeeUsdt ?? 3));
   const storedAddress = useMemo(() => getStoredWalletAddress(), [passwordMode, walletAddress]);
   const txBaseUrl = config?.network ? TX_URLS[config.network] || TX_URLS.mainnet : TX_URLS.nile;
@@ -128,6 +144,7 @@ export function App() {
       return;
     }
 
+    setCachedVaultAddress(readCachedVaultAddress(walletAddress));
     refreshWalletState(walletAddress);
     const timer = setInterval(() => refreshWalletState(walletAddress), 10000);
     return () => clearInterval(timer);
@@ -143,10 +160,14 @@ export function App() {
       getDeposits(address).then((data) => setDeposits(data.rows || [])).catch(() => setDeposits([])),
       getVault(address).then((data) => {
         setVault(data);
+        if (data?.vaultAddress) {
+          cacheVaultAddress(address, data.vaultAddress);
+          setCachedVaultAddress(data.vaultAddress);
+        }
         if (data?.nonce !== undefined) {
           setNonce(String(data.nonce));
         }
-      }).catch(() => setVault(null))
+      }).catch(() => null)
     ]);
   }
 
@@ -200,6 +221,7 @@ export function App() {
     setVault(null);
     setHistory([]);
     setDeposits([]);
+    setCachedVaultAddress('');
     setShowPrivateKey(false);
     setStatus('idle');
     setMessage('Wallet locked.');
@@ -379,7 +401,7 @@ export function App() {
             </div>
             <h2>{formatUsd(vault?.balanceSun)}</h2>
             <strong>{formatUsdt(vault?.balanceSun)} USDT</strong>
-            <p>{shortAddress(vaultAddress || walletAddress)}</p>
+            <p>{vaultAddress ? shortAddress(vaultAddress) : 'Loading vault address'}</p>
             <button className="copy-mini" disabled={!vaultAddress} onClick={() => copyText(vaultAddress, 'Vault address')}>Copy</button>
             <span className="watermark">Z</span>
           </section>
