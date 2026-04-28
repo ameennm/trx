@@ -16,6 +16,14 @@
   --shadow: 0 16px 48px rgba(21, 42, 58, 0.08);
 }
 
+@font-face {
+  font-family: "Gerlach Sans";
+  src: local("Gerlach Sans");
+  font-weight: 400 900;
+  font-style: normal;
+  font-display: swap;
+}
+
 * {
   box-sizing: border-box;
 }
@@ -27,7 +35,7 @@ body {
     radial-gradient(circle at 0% 0%, rgba(255, 90, 31, 0.14), transparent 28%),
     linear-gradient(180deg, #fbfdfc 0%, var(--page) 100%);
   color: var(--ink);
-  font-family: Inter, "Segoe UI", system-ui, sans-serif;
+  font-family: "Gerlach Sans", Inter, "Segoe UI", system-ui, sans-serif;
 }
 
 button,
@@ -880,6 +888,114 @@ small {
   border-radius: 0;
 }
 
+.receive-screen {
+  min-height: calc(100vh - 116px);
+  margin: -8px -22px 0;
+  padding: 24px 34px 122px;
+  background: var(--surface);
+  box-shadow: var(--shadow);
+}
+
+.receive-header {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: center;
+  gap: 10px;
+}
+
+.receive-header h2 {
+  margin: 0;
+  font-size: 26px;
+}
+
+.receive-network {
+  margin: 28px 0 22px;
+  color: var(--ink);
+  font-size: 20px;
+  line-height: 1.35;
+}
+
+.qr-wrap {
+  display: grid;
+  place-items: center;
+  min-height: 280px;
+  margin: 0 auto 12px;
+}
+
+.qr-wrap svg {
+  display: block;
+  width: min(248px, 76vw);
+  height: auto;
+}
+
+.qr-placeholder {
+  display: grid;
+  place-items: center;
+  width: 248px;
+  max-width: 76vw;
+  aspect-ratio: 1;
+  border-radius: 20px;
+  background: #f3f6f7;
+  color: var(--muted);
+  font-weight: 850;
+}
+
+.receive-type {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 8px;
+  margin: 6px 0 22px;
+  font-size: 19px;
+}
+
+.receive-type strong {
+  padding: 3px 8px;
+  border-radius: 6px;
+  background: #dff7e9;
+  color: #238852;
+  font-size: 14px;
+}
+
+.receive-address-card {
+  overflow: hidden;
+  border-radius: 8px;
+  background: #f4f4f7;
+  text-align: center;
+}
+
+.receive-address-card strong,
+.receive-address-card button {
+  display: block;
+  width: 100%;
+}
+
+.receive-address-card strong {
+  padding: 20px 14px;
+  color: var(--ink);
+  font-size: 16px;
+  font-family: Consolas, "SFMono-Regular", monospace;
+  font-weight: 500;
+  word-break: break-all;
+}
+
+.receive-address-card button {
+  min-height: 52px;
+  border: 0;
+  border-top: 1px solid #e7e9ee;
+  background: #f7f7fa;
+  color: var(--ink);
+  font-size: 17px;
+  cursor: pointer;
+}
+
+.receive-note {
+  margin: 56px 0 0;
+  color: var(--muted);
+  font-size: 16px;
+  line-height: 1.55;
+}
+
 .asset-detail-header h2 {
   margin: 0;
   font-size: 28px;
@@ -1064,7 +1180,7 @@ small {
   width: min(560px, calc(100% - 24px));
   transform: translateX(-50%);
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(5, 1fr);
   gap: 4px;
   padding: 8px;
   border: 1px solid var(--line);

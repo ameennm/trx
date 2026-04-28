@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { QRCodeSVG } from 'qrcode.react';
 import { nanoid } from 'nanoid';
 import { getConfig, getDeposits, getHistory, getVault, submitRelay } from '../lib/api';
 import {
@@ -12,7 +13,7 @@ import { deriveWalletFromPrivateKey, generateNewWallet, signRelayTransfer } from
 import { StatusPill } from '../components/StatusPill';
 
 type RelayState = 'idle' | 'validating' | 'signing' | 'preflight' | 'broadcasting' | 'broadcasted' | 'confirmed' | 'failed';
-type View = 'home' | 'send' | 'history' | 'settings';
+type View = 'home' | 'send' | 'receive' | 'history' | 'settings';
 type HistoryFilter = 'all' | 'sent' | 'received';
 const LANDING_SESSION_KEY = 'z-vault-pro-entered';
 
@@ -297,6 +298,7 @@ export function App() {
   const navItems: Array<{ id: View; label: string; icon: string }> = [
     { id: 'home', label: 'Home', icon: 'home' },
     { id: 'send', label: 'Send', icon: 'send' },
+    { id: 'receive', label: 'Receive', icon: 'receive' },
     { id: 'history', label: 'History', icon: 'history' },
     { id: 'settings', label: 'Settings', icon: 'settings' }
   ];
@@ -384,7 +386,7 @@ export function App() {
 
           <section className="wallet-actions">
             <button onClick={() => setView('send')}><span>UP</span>Send</button>
-            <button disabled={!vaultAddress} onClick={() => copyText(vaultAddress, 'Vault address')}><span>IN</span>Receive</button>
+            <button disabled={!vaultAddress} onClick={() => setView('receive')}><span>IN</span>Receive</button>
           </section>
 
           <section className="assets-section">
@@ -413,7 +415,7 @@ export function App() {
             <div className="address-card">
               <span>Your gasless address</span>
               <strong>{vaultAddress || 'Loading vault address'}</strong>
-              <button className="button" disabled={!vaultAddress} onClick={() => copyText(vaultAddress, 'Vault address')}>Copy Address</button>
+              <button className="button" disabled={!vaultAddress} onClick={() => setView('receive')}>Open Receive</button>
             </div>
           </section>
 
@@ -468,6 +470,42 @@ export function App() {
         </section>
       ) : null}
 
+      {isUnlocked && view === 'receive' ? (
+        <section className="receive-screen">
+          <div className="receive-header">
+            <button className="back-button" onClick={() => setView('home')}>Back</button>
+            <h2>Receive</h2>
+          </div>
+          <p className="receive-network">Only TRON network assets are supported</p>
+          <div className="qr-wrap">
+            {vaultAddress ? (
+              <QRCodeSVG
+                value={vaultAddress}
+                size={248}
+                level="M"
+                marginSize={1}
+                bgColor="#ffffff"
+                fgColor="#000000"
+              />
+            ) : (
+              <div className="qr-placeholder">Loading</div>
+            )}
+          </div>
+          <div className="receive-type">
+            <span>GasFree</span>
+            <strong>General</strong>
+          </div>
+          <div className="receive-address-card">
+            <strong>{vaultAddress || 'Loading vault address'}</strong>
+            <button disabled={!vaultAddress} onClick={() => copyText(vaultAddress, 'Vault address')}>Copy</button>
+          </div>
+          <p className="receive-note">
+            You can transfer only TRON-based tokens, including TRC20 USDT, to this gasless vault address.
+            Other network assets may get lost during transfer.
+          </p>
+        </section>
+      ) : null}
+
       {isUnlocked && view === 'history' ? (
         <section className="asset-detail">
           <div className="asset-detail-header">
@@ -508,7 +546,7 @@ export function App() {
           </div>
           <div className="asset-bottom-actions">
             <button onClick={() => setView('send')}>Send</button>
-            <button disabled={!vaultAddress} onClick={() => copyText(vaultAddress, 'Vault address')}>Receive</button>
+            <button disabled={!vaultAddress} onClick={() => setView('receive')}>Receive</button>
           </div>
         </section>
       ) : null}
@@ -665,6 +703,15 @@ function NavIcon({ name }: { name: string }) {
       </svg>
     );
   }
+  if (name === 'receive') {
+    return (
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M12 4v12" />
+        <path d="m7 11 5 5 5-5" />
+        <path d="M5 20h14" />
+      </svg>
+    );
+  }
   if (name === 'history') {
     return (
       <svg viewBox="0 0 24 24" aria-hidden="true">
@@ -686,12 +733,13 @@ function TransactionRow({ row, txBaseUrl }: { row: any; txBaseUrl: string }) {
   const href = row.tx_hash ? `${txBaseUrl}${row.tx_hash}` : undefined;
   const isReceived = row.type === 'received';
   const tone = isReceived ? 'received' : rowTone(row.status);
+  const directionText = isReceived ? `From ${shortAddress(row.sender)}` : `To ${shortAddress(row.recipient)}`;
   return (
     <a className={`history-item ${tone}`} href={href} target="_blank" rel="noreferrer">
       <span className="activity-icon">{isReceived ? '+' : tone === 'success' ? '-' : tone === 'failed' ? '!' : '..'}</span>
       <div>
         <strong>{isReceived ? 'Received' : statusLabel(row.status)}</strong>
-        <p className="muted">{isReceived ? `From ${shortAddress(row.sender)}` : `To ${shortAddress(row.recipient)}`} · {formatDate(row.created_at)}</p>
+        <p className="muted">{directionText} - {formatDate(row.created_at)}</p>
         {row.error_message ? <p className="muted error-text">{row.error_message}</p> : null}
       </div>
       <div className="history-amount">
