@@ -683,9 +683,9 @@ function NavIcon({ name }: { name: string }) {
 }
 
 function TransactionRow({ row, txBaseUrl }: { row: any; txBaseUrl: string }) {
-  const tone = rowTone(row.status);
   const href = row.tx_hash ? `${txBaseUrl}${row.tx_hash}` : undefined;
   const isReceived = row.type === 'received';
+  const tone = isReceived ? 'received' : rowTone(row.status);
   return (
     <a className={`history-item ${tone}`} href={href} target="_blank" rel="noreferrer">
       <span className="activity-icon">{isReceived ? '+' : tone === 'success' ? '-' : tone === 'failed' ? '!' : '..'}</span>

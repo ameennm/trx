@@ -1,23 +1,41 @@
 import { appConfig } from './config';
 
+async function fetchJson(path: string, retries = 2) {
+  let lastError: unknown;
+
+  for (let attempt = 0; attempt <= retries; attempt += 1) {
+    try {
+      const response = await fetch(`${appConfig.backendUrl}${path}`);
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data?.error || `HTTP ${response.status}`);
+      }
+      return data;
+    } catch (error) {
+      lastError = error;
+      if (attempt < retries) {
+        await new Promise((resolve) => setTimeout(resolve, 350 * (attempt + 1)));
+      }
+    }
+  }
+
+  throw lastError;
+}
+
 export async function getConfig() {
-  const response = await fetch(`${appConfig.backendUrl}/config`);
-  return response.json();
+  return fetchJson('/config');
 }
 
 export async function getHistory(userAddress: string) {
-  const response = await fetch(`${appConfig.backendUrl}/history/${userAddress}`);
-  return response.json();
+  return fetchJson(`/history/${userAddress}`);
 }
 
 export async function getDeposits(userAddress: string) {
-  const response = await fetch(`${appConfig.backendUrl}/deposits/${userAddress}`);
-  return response.json();
+  return fetchJson(`/deposits/${userAddress}`);
 }
 
 export async function getVault(userAddress: string) {
-  const response = await fetch(`${appConfig.backendUrl}/vault/${userAddress}`);
-  return response.json();
+  return fetchJson(`/vault/${userAddress}`);
 }
 
 export async function submitRelay(payload: Record<string, unknown>) {
