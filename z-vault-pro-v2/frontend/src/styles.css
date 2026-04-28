@@ -826,16 +826,12 @@ small {
 }
 
 .history-item.success .activity-icon {
-  background: #e8f5f2;
-  color: var(--brand-dark);
+  background: #fff0f1;
+  color: var(--danger);
 }
 
 .history-item.received .activity-icon {
   background: #eaf7ee;
-  color: #248a4f;
-}
-
-.history-item.received .history-amount strong {
   color: #248a4f;
 }
 
@@ -863,6 +859,10 @@ small {
 .history-amount strong {
   color: var(--danger);
   font-size: 16px;
+}
+
+.history-item.received .history-amount strong {
+  color: #248a4f;
 }
 
 .history-amount small {
