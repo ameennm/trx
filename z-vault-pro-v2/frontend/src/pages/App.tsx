@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { nanoid } from 'nanoid';
-import { getConfig, getHistory, getVault, submitRelay } from '../lib/api';
+import { getConfig, getDeposits, getHistory, getVault, submitRelay } from '../lib/api';
 import {
   getStoredWalletAddress,
   hasStoredWallet,
@@ -13,15 +13,26 @@ import { StatusPill } from '../components/StatusPill';
 
 type RelayState = 'idle' | 'validating' | 'signing' | 'preflight' | 'broadcasting' | 'broadcasted' | 'confirmed' | 'failed';
 type View = 'home' | 'send' | 'history' | 'settings';
+type HistoryFilter = 'all' | 'sent' | 'received';
+const LANDING_SESSION_KEY = 'z-vault-pro-entered';
 
 const TX_URLS: Record<string, string> = {
   nile: 'https://nile.tronscan.org/#/transaction/',
   mainnet: 'https://tronscan.org/#/transaction/'
 };
 
+function toUsdt(balanceSun?: string | number) {
+  return Number(balanceSun || 0) / 1_000_000;
+}
+
 function formatUsdt(balanceSun?: string | number) {
-  const value = Number(balanceSun || 0) / 1_000_000;
+  const value = toUsdt(balanceSun);
   return value.toLocaleString(undefined, { maximumFractionDigits: 6 });
+}
+
+function formatUsd(value?: string | number) {
+  const amount = toUsdt(value);
+  return `$${amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
 function shortAddress(value = '') {
@@ -38,6 +49,42 @@ function maskPrivateKey(value = '') {
   return `${value.slice(0, 6)}${'*'.repeat(42)}${value.slice(-6)}`;
 }
 
+function describeRelayError(error: any) {
+  const message = String(error?.message || error?.error || error || 'Relay failed');
+  const details = error?.details;
+  const phase = details?.status ? `Phase: ${details.status}` : '';
+  const txHash = details?.txHash ? `Tx: ${details.txHash}` : '';
+  return [message, phase, txHash].filter(Boolean).join(' | ');
+}
+
+function statusLabel(status: string) {
+  if (status === 'received') return 'Received';
+  if (status === 'confirmed') return 'Sent';
+  if (status === 'broadcasted') return 'Broadcasted';
+  if (status === 'reverted') return 'Failed';
+  if (status === 'preflight_failed') return 'Preflight failed';
+  if (status === 'energy_rented') return 'Energy rented';
+  return status.replaceAll('_', ' ');
+}
+
+function rowTone(status: string) {
+  if (status === 'received') return 'received';
+  if (status === 'confirmed') return 'success';
+  if (status === 'broadcasted' || status === 'energy_rented') return 'pending';
+  if (status.includes('failed') || status === 'reverted' || status === 'broadcast_rejected') return 'failed';
+  return 'pending';
+}
+
+function formatDate(ts?: number) {
+  if (!ts) return '';
+  return new Date(ts).toLocaleString(undefined, {
+    month: 'short',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit'
+  });
+}
+
 export function App() {
   const [privateKey, setPrivateKey] = useState('');
   const [walletAddress, setWalletAddress] = useState('');
@@ -50,16 +97,26 @@ export function App() {
   const [nonce, setNonce] = useState('0');
   const [vault, setVault] = useState<any>(null);
   const [history, setHistory] = useState<any[]>([]);
+  const [deposits, setDeposits] = useState<any[]>([]);
+  const [historyFilter, setHistoryFilter] = useState<HistoryFilter>('all');
   const [status, setStatus] = useState<RelayState>('idle');
   const [message, setMessage] = useState('');
   const [config, setConfig] = useState<any>(null);
   const [view, setView] = useState<View>('home');
+  const [enteredWallet, setEnteredWallet] = useState(() => hasStoredWallet() || sessionStorage.getItem(LANDING_SESSION_KEY) === '1');
 
   const vaultAddress = vault?.vaultAddress || '';
   const feeUsdt = String(vault?.deployed ? (config?.platformFeeUsdt ?? 1.2) : (config?.firstSendFeeUsdt ?? 3));
   const storedAddress = useMemo(() => getStoredWalletAddress(), [passwordMode, walletAddress]);
   const txBaseUrl = config?.network ? TX_URLS[config.network] || TX_URLS.mainnet : TX_URLS.nile;
   const isUnlocked = Boolean(privateKey && walletAddress);
+  const balanceSun = Number(vault?.balanceSun || 0);
+  const feeSun = Math.floor(Number(feeUsdt) * 1_000_000);
+  const spendableSun = Math.max(balanceSun - feeSun, 0);
+  const networkLabel = config?.network === 'mainnet' ? 'Mainnet' : 'Nile';
+  const combinedHistory = [...deposits, ...history].sort((a, b) => Number(b.created_at || 0) - Number(a.created_at || 0));
+  const recentHistory = combinedHistory.slice(0, 4);
+  const filteredHistory = historyFilter === 'received' ? deposits : historyFilter === 'sent' ? history : combinedHistory;
 
   useEffect(() => {
     getConfig().then(setConfig).catch(() => null);
@@ -82,6 +139,7 @@ export function App() {
 
     await Promise.all([
       getHistory(address).then((data) => setHistory(data.rows || [])).catch(() => setHistory([])),
+      getDeposits(address).then((data) => setDeposits(data.rows || [])).catch(() => setDeposits([])),
       getVault(address).then((data) => {
         setVault(data);
         if (data?.nonce !== undefined) {
@@ -127,7 +185,7 @@ export function App() {
       setPassword('');
       setStatus('idle');
       setShowPrivateKey(false);
-      setMessage('Wallet unlocked.');
+      setMessage('');
       await refreshWalletState(wallet.address);
     } catch (error: any) {
       setStatus('failed');
@@ -140,6 +198,7 @@ export function App() {
     setWalletAddress('');
     setVault(null);
     setHistory([]);
+    setDeposits([]);
     setShowPrivateKey(false);
     setStatus('idle');
     setMessage('Wallet locked.');
@@ -214,7 +273,7 @@ export function App() {
       setStatus('broadcasting');
       const result = await submitRelay(payload);
       if (!result.success) {
-        throw new Error(result.error || 'Relay failed');
+        throw new Error(describeRelayError(result));
       }
 
       if (result.status === 'confirmed') {
@@ -230,50 +289,37 @@ export function App() {
       await refreshWalletState(walletAddress);
     } catch (error: any) {
       setStatus('failed');
-      setMessage(String(error?.message || error));
+      setMessage(describeRelayError(error));
       await refreshWalletState(walletAddress);
     }
   }
 
   const navItems: Array<{ id: View; label: string; icon: string }> = [
-    { id: 'home', label: 'Home', icon: 'H' },
-    { id: 'send', label: 'Send', icon: 'S' },
-    { id: 'history', label: 'History', icon: 'R' },
-    { id: 'settings', label: 'Settings', icon: 'SET' }
+    { id: 'home', label: 'Home', icon: 'home' },
+    { id: 'send', label: 'Send', icon: 'send' },
+    { id: 'history', label: 'History', icon: 'history' },
+    { id: 'settings', label: 'Settings', icon: 'settings' }
   ];
+
+  function enterWallet() {
+    sessionStorage.setItem(LANDING_SESSION_KEY, '1');
+    setEnteredWallet(true);
+  }
+
+  if (!enteredWallet) {
+    return <LandingPage onEnter={enterWallet} />;
+  }
 
   return (
     <main className="app-shell">
-      <header className="topbar">
-        <div>
-          <div className="brand">Z-Vault Pro</div>
-          <div className="network">{config?.network || 'loading'} | {config?.energyProviderMode || 'mock'} energy</div>
-        </div>
-        <StatusPill label={isUnlocked ? 'unlocked' : 'locked'} />
-      </header>
-
-      <section className="hero">
-        <div>
-          <p className="eyebrow">Gasless Vault</p>
-          <h1>{formatUsdt(vault?.balanceSun)} USDT</h1>
-          <p className="muted">Vault balance</p>
-        </div>
-        <div className="hero-actions">
-          <button className="icon-button" disabled={!vaultAddress} onClick={() => copyText(vaultAddress, 'Vault address')} title="Copy vault address">CP</button>
-          <button className="icon-button" disabled={!walletAddress} onClick={() => refreshWalletState()} title="Refresh vault">RF</button>
-        </div>
-      </section>
-
       {!isUnlocked ? (
         <section className="panel auth-panel">
-          <div>
-            <h2>{passwordMode === 'unlock' ? 'Unlock Wallet' : 'Create Wallet'}</h2>
-            <p className="muted">
-              {passwordMode === 'unlock' && storedAddress
-                ? `Saved controller: ${shortAddress(storedAddress)}`
-                : 'Create a local controller and protect it with a password.'}
-            </p>
+          <div className="login-brand-panel">
+            <div className="login-mark">Z</div>
+            <h1>Z-Vault Pro</h1>
+            <p>{networkLabel} gasless USDT wallet</p>
           </div>
+          {passwordMode === 'unlock' && storedAddress ? <p className="saved-controller">Saved wallet: {shortAddress(storedAddress)}</p> : null}
           <div className="field">
             <label htmlFor="password">Password</label>
             <input
@@ -299,7 +345,7 @@ export function App() {
             </div>
           ) : null}
           <button className="button" onClick={passwordMode === 'unlock' ? unlockWallet : createWallet}>
-            {passwordMode === 'unlock' ? 'Unlock' : 'Create New Gasless Wallet'}
+            {passwordMode === 'unlock' ? 'Unlock' : 'Create Wallet'}
           </button>
           {hasStoredWallet() ? (
             <button className="text-button" onClick={() => setPasswordMode(passwordMode === 'unlock' ? 'create' : 'unlock')}>
@@ -309,43 +355,90 @@ export function App() {
         </section>
       ) : null}
 
+      {isUnlocked ? (
+        <header className="wallet-header">
+          <div>
+            <h1>Wallet</h1>
+            <p>{networkLabel}</p>
+          </div>
+          <div className="header-actions">
+            <button className="round-button" title="Wallet information">i</button>
+            <button className="round-button" title="Settings" onClick={() => setView('settings')}>...</button>
+          </div>
+        </header>
+      ) : null}
+
       {isUnlocked && view === 'home' ? (
         <div className="screen">
-          <section className="grid two">
-            <div className="panel">
-              <div className="panel-head">
-                <h2>Receive</h2>
-                <StatusPill label={vault?.deployed ? 'deployed' : 'not deployed'} />
-              </div>
-              <p className="label">Your Gasless USDT address</p>
-              <p className="code large">{vaultAddress || 'Loading vault address'}</p>
-              <button className="button" disabled={!vaultAddress} onClick={() => copyText(vaultAddress, 'Vault address')}>Copy Vault Address</button>
+          <section className="wallet-card">
+            <div className="wallet-card-top">
+              <span className="card-title"><span className="mini-logo">Z</span> Wallet Asset</span>
+              <button className="general-wallet-button">Gasless Vault</button>
             </div>
+            <h2>{formatUsd(vault?.balanceSun)}</h2>
+            <strong>{formatUsdt(vault?.balanceSun)} USDT</strong>
+            <p>{shortAddress(vaultAddress || walletAddress)}</p>
+            <button className="copy-mini" disabled={!vaultAddress} onClick={() => copyText(vaultAddress, 'Vault address')}>Copy</button>
+            <span className="watermark">Z</span>
+          </section>
 
-            <div className="panel">
-              <div className="panel-head">
-                <h2>Controller</h2>
-                <button className="mini-button" onClick={lockWallet}>Lock</button>
-              </div>
-              <p className="label">Controller address</p>
-              <p className="code">{walletAddress}</p>
-              <p className="label">Private key backup</p>
-              <p className="code">{showPrivateKey ? privateKey : maskPrivateKey(privateKey)}</p>
-              <div className="button-row">
-                <button className="mini-button" onClick={() => setShowPrivateKey((value) => !value)}>
-                  {showPrivateKey ? 'Hide' : 'Reveal'}
-                </button>
-                <button className="mini-button" onClick={() => copyText(privateKey, 'Private key')}>Copy</button>
-              </div>
+          <section className="wallet-actions">
+            <button onClick={() => setView('send')}><span>UP</span>Send</button>
+            <button disabled={!vaultAddress} onClick={() => copyText(vaultAddress, 'Vault address')}><span>IN</span>Receive</button>
+          </section>
+
+          <section className="assets-section">
+            <div className="tab-title">
+              <h2>Assets</h2>
+              <span />
+            </div>
+            <button className="asset-row" onClick={() => setView('history')}>
+              <span className="usdt-badge">T</span>
+              <span className="asset-name">
+                <strong>USDT</strong>
+                <small>$0.99993</small>
+              </span>
+              <span className="asset-amount">
+                <strong>{formatUsdt(vault?.balanceSun)}</strong>
+                <small>{formatUsd(vault?.balanceSun)}</small>
+              </span>
+            </button>
+          </section>
+
+          <section className="panel receive-panel">
+            <div className="section-title">
+              <h2>Receive USDT</h2>
+              <StatusPill label={vault?.deployed ? 'deployed' : 'not deployed'} />
+            </div>
+            <div className="address-card">
+              <span>Your gasless address</span>
+              <strong>{vaultAddress || 'Loading vault address'}</strong>
+              <button className="button" disabled={!vaultAddress} onClick={() => copyText(vaultAddress, 'Vault address')}>Copy Address</button>
+            </div>
+          </section>
+
+          <section className="panel">
+            <div className="section-title">
+              <h2>Recent Activity</h2>
+              <button className="text-inline" onClick={() => setView('history')}>View all</button>
+            </div>
+            <div className="history-list compact">
+              {recentHistory.map((row) => (
+                <TransactionRow key={row.id} row={row} txBaseUrl={txBaseUrl} />
+              ))}
+              {!recentHistory.length ? <p className="muted">No relay history yet.</p> : null}
             </div>
           </section>
         </div>
       ) : null}
 
       {isUnlocked && view === 'send' ? (
-        <section className="panel">
-          <div className="panel-head">
-            <h2>Send USDT</h2>
+        <section className="panel send-panel">
+          <div className="section-title">
+            <div>
+              <h2>Send USDT</h2>
+              <p className="muted">Available {formatUsdt(vault?.balanceSun)} USDT</p>
+            </div>
             <StatusPill label={status} />
           </div>
           <div className="grid two">
@@ -366,39 +459,83 @@ export function App() {
               <strong>{nonce}</strong>
             </div>
           </div>
+          <div className="send-summary">
+            <span>Total deducted</span>
+            <strong>{Number(amountUsdt || 0) + Number(feeUsdt || 0)} USDT</strong>
+          </div>
           <button className="button primary" disabled={!recipient || status === 'signing' || status === 'broadcasting'} onClick={sendGasless}>Send Gasless</button>
           {message ? <p className="muted">{message}</p> : null}
         </section>
       ) : null}
 
       {isUnlocked && view === 'history' ? (
-        <section className="panel">
-          <h2>History</h2>
-          <div className="history-list">
-            {history.map((row) => (
-              <a
-                key={row.id}
-                className="history-item"
-                href={row.tx_hash ? `${txBaseUrl}${row.tx_hash}` : undefined}
-                target="_blank"
-                rel="noreferrer"
-              >
-                <div>
-                  <strong>{row.status}</strong>
-                  <p className="muted">To {shortAddress(row.recipient)}</p>
-                </div>
-                <div className="code">{row.tx_hash ? shortAddress(row.tx_hash) : 'No hash'}</div>
-              </a>
+        <section className="asset-detail">
+          <div className="asset-detail-header">
+            <button className="back-button" onClick={() => setView('home')}>Back</button>
+            <h2>USDT <span>TRC20</span></h2>
+            <button className="round-button">i</button>
+          </div>
+          <div className="price-row">
+            <span>Current Price</span>
+            <strong>$0.99993</strong>
+          </div>
+          <div className="asset-balance-card">
+            <span className="usdt-badge large">T</span>
+            <h3>{formatUsdt(vault?.balanceSun)}</h3>
+            <p>{formatUsd(vault?.balanceSun)}</p>
+            <div>
+              <span>Available<strong>{formatUsdt(spendableSun)}</strong></span>
+              <span>Fee Reserve<strong>{formatUsdt(feeSun)}</strong></span>
+            </div>
+          </div>
+          <div className="history-tabs">
+            {(['all', 'sent', 'received'] as HistoryFilter[]).map((item) => (
+              <button key={item} className={historyFilter === item ? 'active' : ''} onClick={() => setHistoryFilter(item)}>
+                {item}
+              </button>
             ))}
-            {!history.length ? <p className="muted">No relay history yet.</p> : null}
+          </div>
+          <div className="history-list asset-history">
+            {filteredHistory.map((row) => (
+              <TransactionRow key={row.id} row={row} txBaseUrl={txBaseUrl} />
+            ))}
+            {!filteredHistory.length ? (
+              <div className="empty-state">
+                <div className="empty-icon">doc</div>
+                <p>No data</p>
+              </div>
+            ) : null}
+          </div>
+          <div className="asset-bottom-actions">
+            <button onClick={() => setView('send')}>Send</button>
+            <button disabled={!vaultAddress} onClick={() => copyText(vaultAddress, 'Vault address')}>Receive</button>
           </div>
         </section>
       ) : null}
 
       {isUnlocked && view === 'settings' ? (
         <section className="panel">
-          <h2>Settings</h2>
+          <div className="section-title">
+            <h2>Settings</h2>
+            <StatusPill label={networkLabel} />
+          </div>
           <div className="settings-grid">
+            <div className="setting-row">
+              <span>Wallet lock</span>
+              <button className="mini-button" onClick={lockWallet}>Lock Now</button>
+            </div>
+            <div className="setting-row">
+              <span>Private key</span>
+              <button className="mini-button" onClick={() => setShowPrivateKey((value) => !value)}>{showPrivateKey ? 'Hide' : 'Reveal'}</button>
+            </div>
+            <div>
+              <p className="label">Controller address</p>
+              <p className="code">{walletAddress}</p>
+            </div>
+            <div>
+              <p className="label">Private key backup</p>
+              <p className="code">{showPrivateKey ? privateKey : maskPrivateKey(privateKey)}</p>
+            </div>
             <div>
               <p className="label">Relayer contract</p>
               <p className="code">{config?.relayerContract || 'loading'}</p>
@@ -422,12 +559,145 @@ export function App() {
         <nav className="bottom-nav" aria-label="Main navigation">
           {navItems.map((item) => (
             <button key={item.id} className={view === item.id ? 'active' : ''} onClick={() => setView(item.id)}>
-              <span>{item.icon}</span>
+              <NavIcon name={item.icon} />
               {item.label}
             </button>
           ))}
         </nav>
       ) : null}
     </main>
+  );
+}
+
+function LandingPage({ onEnter }: { onEnter: () => void }) {
+  return (
+    <main className="landing-shell">
+      <nav className="landing-nav">
+        <div className="landing-brand">
+          <span>Z</span>
+          <strong>Z-Vault Pro</strong>
+        </div>
+        <button onClick={onEnter}>Launch Wallet</button>
+      </nav>
+
+      <section className="landing-hero">
+        <div className="landing-copy">
+          <p className="landing-eyebrow">Gasless USDT on TRON</p>
+          <h1>Send USDT without holding TRX.</h1>
+          <p>
+            Z-Vault Pro gives every user a gasless smart vault. Receive TRC20 USDT,
+            sign locally, and let the relayer handle TRON energy in the background.
+          </p>
+          <div className="landing-actions">
+            <button onClick={onEnter}>Get Started</button>
+            <a href="#how-it-works">How it works</a>
+          </div>
+        </div>
+
+        <div className="landing-phone" aria-label="Wallet preview">
+          <div className="preview-header">
+            <span>Wallet</span>
+            <small>Mainnet</small>
+          </div>
+          <div className="preview-card">
+            <span>Wallet Asset</span>
+            <h2>$0.00</h2>
+            <p>0 USDT</p>
+            <small>TQ...vault</small>
+          </div>
+          <div className="preview-actions">
+            <span>Send</span>
+            <span>Receive</span>
+          </div>
+          <div className="preview-asset">
+            <span className="usdt-badge">T</span>
+            <div>
+              <strong>USDT</strong>
+              <small>TRC20</small>
+            </div>
+            <strong>0</strong>
+          </div>
+        </div>
+      </section>
+
+      <section className="landing-grid" id="how-it-works">
+        <article>
+          <span>01</span>
+          <h2>Create Wallet</h2>
+          <p>Create an encrypted controller wallet in your browser. Your private key never goes to the backend.</p>
+        </article>
+        <article>
+          <span>02</span>
+          <h2>Receive USDT</h2>
+          <p>Share your gasless vault address and receive TRC20 USDT directly into the vault.</p>
+        </article>
+        <article>
+          <span>03</span>
+          <h2>Send Gasless</h2>
+          <p>Sign the transfer locally. The backend rents energy and broadcasts the transaction on TRON.</p>
+        </article>
+      </section>
+
+      <section className="landing-band">
+        <div>
+          <h2>Built for a wallet-first experience</h2>
+          <p>Clear balances, clean token history, password-protected storage, and detailed relay failure messages.</p>
+        </div>
+        <button onClick={onEnter}>Open Wallet</button>
+      </section>
+    </main>
+  );
+}
+
+function NavIcon({ name }: { name: string }) {
+  if (name === 'home') {
+    return (
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M4 10.8 12 4l8 6.8V20a1 1 0 0 1-1 1h-5v-6h-4v6H5a1 1 0 0 1-1-1z" />
+      </svg>
+    );
+  }
+  if (name === 'send') {
+    return (
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M4 12 20 4l-5.2 16-3.2-6.8z" />
+        <path d="M11.6 13.2 20 4" />
+      </svg>
+    );
+  }
+  if (name === 'history') {
+    return (
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M12 7v5l3 2" />
+        <path d="M5.2 6.8A8 8 0 1 1 4 12" />
+        <path d="M4 5v4h4" />
+      </svg>
+    );
+  }
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M12 8.5a3.5 3.5 0 1 0 0 7 3.5 3.5 0 0 0 0-7z" />
+      <path d="M19.4 15a8 8 0 0 0 .1-1l2-1.5-2-3.5-2.4 1a8 8 0 0 0-1.7-1L15 6.5h-6L8.6 9a8 8 0 0 0-1.7 1l-2.4-1-2 3.5 2 1.5a8 8 0 0 0 .1 1l-2 1.5 2 3.5 2.4-1a8 8 0 0 0 1.7 1l.4 2.5h6l.4-2.5a8 8 0 0 0 1.7-1l2.4 1 2-3.5z" />
+    </svg>
+  );
+}
+
+function TransactionRow({ row, txBaseUrl }: { row: any; txBaseUrl: string }) {
+  const tone = rowTone(row.status);
+  const href = row.tx_hash ? `${txBaseUrl}${row.tx_hash}` : undefined;
+  const isReceived = row.type === 'received';
+  return (
+    <a className={`history-item ${tone}`} href={href} target="_blank" rel="noreferrer">
+      <span className="activity-icon">{isReceived ? '+' : tone === 'success' ? '-' : tone === 'failed' ? '!' : '..'}</span>
+      <div>
+        <strong>{isReceived ? 'Received' : statusLabel(row.status)}</strong>
+        <p className="muted">{isReceived ? `From ${shortAddress(row.sender)}` : `To ${shortAddress(row.recipient)}`} · {formatDate(row.created_at)}</p>
+        {row.error_message ? <p className="muted error-text">{row.error_message}</p> : null}
+      </div>
+      <div className="history-amount">
+        <strong>{isReceived ? '+' : '-'}{formatUsdt(row.amount_sun)} USDT</strong>
+        <small>{isReceived ? 'Deposit' : `Fee ${formatUsdt(row.fee_sun)} USDT`}</small>
+      </div>
+    </a>
   );
 }

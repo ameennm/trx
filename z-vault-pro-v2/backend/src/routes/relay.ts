@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { getRelayHistory, getVaultStatus, submitRelay } from '../services/relayService.js';
 import { appConfig } from '../config.js';
 import { rateLimit } from '../middleware/rateLimit.js';
+import { getReceivedDeposits } from '../services/depositService.js';
 
 export const relayRouter = Router();
 
@@ -59,6 +60,15 @@ relayRouter.get('/history/:userAddress', async (req, res, next) => {
   try {
     const rows = await getRelayHistory(req.params.userAddress);
     res.json({ success: true, rows });
+  } catch (error) {
+    next(error);
+  }
+});
+
+relayRouter.get('/deposits/:userAddress', async (req, res, next) => {
+  try {
+    const result = await getReceivedDeposits(req.params.userAddress);
+    res.json({ success: true, ...result });
   } catch (error) {
     next(error);
   }
