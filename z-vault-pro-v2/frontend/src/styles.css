@@ -843,6 +843,16 @@ small {
   color: #248a4f;
 }
 
+.activity-icon.credit {
+  background: #eaf7ee;
+  color: #168446;
+}
+
+.activity-icon.debit {
+  background: #fff0f1;
+  color: var(--danger);
+}
+
 .history-item.failed .activity-icon {
   background: #fff0f1;
   color: var(--danger);
@@ -871,6 +881,14 @@ small {
 
 .history-item.received .history-amount strong {
   color: #248a4f;
+}
+
+.history-amount.credit strong {
+  color: #168446;
+}
+
+.history-amount.debit strong {
+  color: var(--danger);
 }
 
 .history-amount small {
@@ -1016,6 +1034,28 @@ small {
   color: var(--ink);
   font-weight: 800;
   cursor: pointer;
+}
+
+.icon-back {
+  display: inline-grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 999px;
+}
+
+.icon-back svg {
+  width: 24px;
+  height: 24px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2.4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.icon-back:hover {
+  background: #f3f6f7;
 }
 
 .price-row {

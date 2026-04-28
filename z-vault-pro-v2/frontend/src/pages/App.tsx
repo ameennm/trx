@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { QRCodeSVG } from 'qrcode.react';
 import { nanoid } from 'nanoid';
 import { getConfig, getDeposits, getHistory, getVault, submitRelay } from '../lib/api';
@@ -121,6 +121,7 @@ export function App() {
   const [view, setView] = useState<View>('home');
   const [enteredWallet, setEnteredWallet] = useState(() => hasStoredWallet() || sessionStorage.getItem(LANDING_SESSION_KEY) === '1');
   const [cachedVaultAddress, setCachedVaultAddress] = useState('');
+  const activeWalletRef = useRef('');
 
   const vaultAddress = vault?.vaultAddress || cachedVaultAddress;
   const feeUsdt = String(vault?.deployed ? (config?.platformFeeUsdt ?? 1.2) : (config?.firstSendFeeUsdt ?? 3));
@@ -141,14 +142,47 @@ export function App() {
 
   useEffect(() => {
     if (!walletAddress) {
+      activeWalletRef.current = '';
       return;
     }
 
+    activeWalletRef.current = walletAddress;
+    setVault(null);
     setCachedVaultAddress(readCachedVaultAddress(walletAddress));
     refreshWalletState(walletAddress);
     const timer = setInterval(() => refreshWalletState(walletAddress), 10000);
     return () => clearInterval(timer);
   }, [walletAddress]);
+
+  async function loadVaultAddress(address = walletAddress) {
+    if (!address) {
+      return '';
+    }
+
+    const cached = readCachedVaultAddress(address);
+    if (cached && activeWalletRef.current === address) {
+      setCachedVaultAddress(cached);
+    }
+
+    try {
+      const data = await getVault(address);
+      if (activeWalletRef.current !== address) {
+        return data?.vaultAddress || cached;
+      }
+
+      setVault(data);
+      if (data?.vaultAddress) {
+        cacheVaultAddress(address, data.vaultAddress);
+        setCachedVaultAddress(data.vaultAddress);
+      }
+      if (data?.nonce !== undefined) {
+        setNonce(String(data.nonce));
+      }
+      return data?.vaultAddress || cached;
+    } catch {
+      return cached;
+    }
+  }
 
   async function refreshWalletState(address = walletAddress) {
     if (!address) {
@@ -156,19 +190,27 @@ export function App() {
     }
 
     await Promise.all([
-      getHistory(address).then((data) => setHistory(data.rows || [])).catch(() => setHistory([])),
-      getDeposits(address).then((data) => setDeposits(data.rows || [])).catch(() => setDeposits([])),
-      getVault(address).then((data) => {
-        setVault(data);
-        if (data?.vaultAddress) {
-          cacheVaultAddress(address, data.vaultAddress);
-          setCachedVaultAddress(data.vaultAddress);
-        }
-        if (data?.nonce !== undefined) {
-          setNonce(String(data.nonce));
-        }
-      }).catch(() => null)
+      getHistory(address)
+        .then((data) => {
+          if (activeWalletRef.current === address) setHistory(data.rows || []);
+        })
+        .catch(() => {
+          if (activeWalletRef.current === address) setHistory([]);
+        }),
+      getDeposits(address)
+        .then((data) => {
+          if (activeWalletRef.current === address) setDeposits(data.rows || []);
+        })
+        .catch(() => {
+          if (activeWalletRef.current === address) setDeposits([]);
+        }),
+      loadVaultAddress(address)
     ]);
+  }
+
+  function openReceive() {
+    setView('receive');
+    void loadVaultAddress(walletAddress);
   }
 
   async function createWallet() {
@@ -185,6 +227,9 @@ export function App() {
       });
 
       setPrivateKey(wallet.privateKey);
+      activeWalletRef.current = wallet.address;
+      setVault(null);
+      setCachedVaultAddress(readCachedVaultAddress(wallet.address));
       setWalletAddress(wallet.address);
       setPassword('');
       setConfirmPassword('');
@@ -203,6 +248,9 @@ export function App() {
       const unlockedKey = await unlockEncryptedWallet(password);
       const wallet = deriveWalletFromPrivateKey(unlockedKey);
       setPrivateKey(unlockedKey);
+      activeWalletRef.current = wallet.address;
+      setVault(null);
+      setCachedVaultAddress(readCachedVaultAddress(wallet.address));
       setWalletAddress(wallet.address);
       setPassword('');
       setStatus('idle');
@@ -218,6 +266,7 @@ export function App() {
   function lockWallet() {
     setPrivateKey('');
     setWalletAddress('');
+    activeWalletRef.current = '';
     setVault(null);
     setHistory([]);
     setDeposits([]);
@@ -408,7 +457,7 @@ export function App() {
 
           <section className="wallet-actions">
             <button onClick={() => setView('send')}><span>UP</span>Send</button>
-            <button disabled={!vaultAddress} onClick={() => setView('receive')}><span>IN</span>Receive</button>
+            <button onClick={openReceive}><span>IN</span>Receive</button>
           </section>
 
           <section className="assets-section">
@@ -437,7 +486,7 @@ export function App() {
             <div className="address-card">
               <span>Your gasless address</span>
               <strong>{vaultAddress || 'Loading vault address'}</strong>
-              <button className="button" disabled={!vaultAddress} onClick={() => setView('receive')}>Open Receive</button>
+              <button className="button" onClick={openReceive}>Open Receive</button>
             </div>
           </section>
 
@@ -495,7 +544,9 @@ export function App() {
       {isUnlocked && view === 'receive' ? (
         <section className="receive-screen">
           <div className="receive-header">
-            <button className="back-button" onClick={() => setView('home')}>Back</button>
+            <button className="back-button icon-back" onClick={() => setView('home')} aria-label="Back">
+              <BackIcon />
+            </button>
             <h2>Receive</h2>
           </div>
           <p className="receive-network">Only TRON network assets are supported</p>
@@ -531,7 +582,9 @@ export function App() {
       {isUnlocked && view === 'history' ? (
         <section className="asset-detail">
           <div className="asset-detail-header">
-            <button className="back-button" onClick={() => setView('home')}>Back</button>
+            <button className="back-button icon-back" onClick={() => setView('home')} aria-label="Back">
+              <BackIcon />
+            </button>
             <h2>USDT <span>TRC20</span></h2>
             <button className="round-button">i</button>
           </div>
@@ -568,7 +621,7 @@ export function App() {
           </div>
           <div className="asset-bottom-actions">
             <button onClick={() => setView('send')}>Send</button>
-            <button disabled={!vaultAddress} onClick={() => setView('receive')}>Receive</button>
+            <button onClick={openReceive}>Receive</button>
           </div>
         </section>
       ) : null}
@@ -618,7 +671,11 @@ export function App() {
       {isUnlocked ? (
         <nav className="bottom-nav" aria-label="Main navigation">
           {navItems.map((item) => (
-            <button key={item.id} className={view === item.id ? 'active' : ''} onClick={() => setView(item.id)}>
+            <button
+              key={item.id}
+              className={view === item.id ? 'active' : ''}
+              onClick={() => (item.id === 'receive' ? openReceive() : setView(item.id))}
+            >
               <NavIcon name={item.icon} />
               {item.label}
             </button>
@@ -751,6 +808,14 @@ function NavIcon({ name }: { name: string }) {
   );
 }
 
+function BackIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M15 5 8 12l7 7" />
+    </svg>
+  );
+}
+
 function TransactionRow({ row, txBaseUrl }: { row: any; txBaseUrl: string }) {
   const href = row.tx_hash ? `${txBaseUrl}${row.tx_hash}` : undefined;
   const isReceived = row.type === 'received';
@@ -758,13 +823,13 @@ function TransactionRow({ row, txBaseUrl }: { row: any; txBaseUrl: string }) {
   const directionText = isReceived ? `From ${shortAddress(row.sender)}` : `To ${shortAddress(row.recipient)}`;
   return (
     <a className={`history-item ${tone}`} href={href} target="_blank" rel="noreferrer">
-      <span className="activity-icon">{isReceived ? '+' : tone === 'success' ? '-' : tone === 'failed' ? '!' : '..'}</span>
+      <span className={`activity-icon ${isReceived ? 'credit' : 'debit'}`}>{isReceived ? '+' : tone === 'success' ? '-' : tone === 'failed' ? '!' : '..'}</span>
       <div>
         <strong>{isReceived ? 'Received' : statusLabel(row.status)}</strong>
         <p className="muted">{directionText} - {formatDate(row.created_at)}</p>
         {row.error_message ? <p className="muted error-text">{row.error_message}</p> : null}
       </div>
-      <div className="history-amount">
+      <div className={`history-amount ${isReceived ? 'credit' : 'debit'}`}>
         <strong>{isReceived ? '+' : '-'}{formatUsdt(row.amount_sun)} USDT</strong>
         <small>{isReceived ? 'Deposit' : `Fee ${formatUsdt(row.fee_sun)} USDT`}</small>
       </div>
