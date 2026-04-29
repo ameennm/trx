@@ -15,6 +15,11 @@ import { StatusPill } from '../components/StatusPill';
 type RelayState = 'idle' | 'validating' | 'signing' | 'preflight' | 'broadcasting' | 'broadcasted' | 'confirmed' | 'failed';
 type View = 'home' | 'send' | 'receive' | 'history' | 'settings';
 type HistoryFilter = 'all' | 'sent' | 'received';
+type QuickContact = {
+  address: string;
+  label: string;
+  subtitle: string;
+};
 const LANDING_SESSION_KEY = 'z-vault-pro-entered';
 const VAULT_ADDRESS_CACHE_PREFIX = 'z-vault-pro-vault-address:';
 
@@ -49,6 +54,11 @@ function maskPrivateKey(value = '') {
     return 'Locked';
   }
   return `${value.slice(0, 6)}${'*'.repeat(42)}${value.slice(-6)}`;
+}
+
+function avatarInitials(value = '') {
+  if (!value) return 'Z';
+  return `${value.slice(0, 1)}${value.slice(-1)}`.toUpperCase();
 }
 
 function describeRelayError(error: any) {
@@ -135,6 +145,22 @@ export function App() {
   const combinedHistory = [...deposits, ...history].sort((a, b) => Number(b.created_at || 0) - Number(a.created_at || 0));
   const recentHistory = combinedHistory.slice(0, 4);
   const filteredHistory = historyFilter === 'received' ? deposits : historyFilter === 'sent' ? history : combinedHistory;
+  const quickContacts = useMemo<QuickContact[]>(() => {
+    const seen = new Set<string>();
+    return history
+      .filter((row) => row.recipient && row.status === 'confirmed')
+      .filter((row) => {
+        if (seen.has(row.recipient)) return false;
+        seen.add(row.recipient);
+        return true;
+      })
+      .slice(0, 5)
+      .map((row, index) => ({
+        address: row.recipient,
+        label: `Wallet ${index + 1}`,
+        subtitle: shortAddress(row.recipient)
+      }));
+  }, [history]);
 
   useEffect(() => {
     getConfig().then(setConfig).catch(() => null);
@@ -211,6 +237,11 @@ export function App() {
   function openReceive() {
     setView('receive');
     void loadVaultAddress(walletAddress);
+  }
+
+  function openQuickSend(address: string) {
+    setRecipient(address);
+    setView('send');
   }
 
   async function createWallet() {
@@ -460,6 +491,32 @@ export function App() {
             <button onClick={openReceive}><span>IN</span>Receive</button>
           </section>
 
+          <section className="quick-share-card">
+            <div className="section-title">
+              <div>
+                <h2>Quick Share</h2>
+                <p className="muted">Recent recipients</p>
+              </div>
+              <button className="text-inline" onClick={() => setView('send')}>New</button>
+            </div>
+            <div className="quick-share-row">
+              {quickContacts.map((contact, index) => (
+                <button key={contact.address} className="quick-contact" onClick={() => openQuickSend(contact.address)}>
+                  <span className={`quick-avatar tone-${index % 5}`}>{avatarInitials(contact.address)}</span>
+                  <strong>{contact.label}</strong>
+                  <small>{contact.subtitle}</small>
+                </button>
+              ))}
+              {!quickContacts.length ? (
+                <button className="quick-contact empty" onClick={() => setView('send')}>
+                  <span className="quick-avatar tone-empty">+</span>
+                  <strong>Add</strong>
+                  <small>First send</small>
+                </button>
+              ) : null}
+            </div>
+          </section>
+
           <section className="assets-section">
             <div className="tab-title">
               <h2>Assets</h2>
@@ -513,6 +570,17 @@ export function App() {
               <p className="muted">Available {formatUsdt(vault?.balanceSun)} USDT</p>
             </div>
             <StatusPill label={status} />
+          </div>
+          <div className="quick-send-strip">
+            <span>Quick Share</span>
+            <div>
+              {quickContacts.map((contact, index) => (
+                <button key={contact.address} onClick={() => setRecipient(contact.address)} title={contact.address}>
+                  <span className={`quick-avatar tone-${index % 5}`}>{avatarInitials(contact.address)}</span>
+                </button>
+              ))}
+              {!quickContacts.length ? <small>No recent recipients yet</small> : null}
+            </div>
           </div>
           <div className="grid two">
             <div className="field wide">

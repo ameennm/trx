@@ -491,6 +491,108 @@ small {
   font-weight: 900;
 }
 
+.quick-share-card {
+  margin: 0 0 24px;
+  padding: 18px;
+  border: 1px solid var(--line);
+  border-radius: 22px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(255, 247, 243, 0.72)),
+    var(--surface);
+  box-shadow: var(--shadow);
+}
+
+.quick-share-card .section-title {
+  margin-bottom: 14px;
+}
+
+.quick-share-row {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: 86px;
+  gap: 12px;
+  overflow-x: auto;
+  padding: 4px 2px 6px;
+  scrollbar-width: none;
+}
+
+.quick-share-row::-webkit-scrollbar {
+  display: none;
+}
+
+.quick-contact {
+  display: grid;
+  justify-items: center;
+  gap: 6px;
+  min-height: 112px;
+  border: 0;
+  border-radius: 18px;
+  padding: 12px 8px;
+  background: #fff;
+  color: var(--ink);
+  box-shadow: 0 10px 28px rgba(24, 38, 55, 0.06);
+  cursor: pointer;
+}
+
+.quick-contact strong,
+.quick-contact small {
+  display: block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.quick-contact strong {
+  font-size: 13px;
+}
+
+.quick-contact small {
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.quick-contact.empty {
+  border: 1px dashed #ffd1bf;
+  background: #fff8f4;
+}
+
+.quick-avatar {
+  display: inline-grid;
+  place-items: center;
+  width: 46px;
+  height: 46px;
+  border-radius: 16px;
+  color: white;
+  font-size: 15px;
+  font-weight: 950;
+}
+
+.tone-0 {
+  background: linear-gradient(135deg, #ff7043, #db4d18);
+}
+
+.tone-1 {
+  background: linear-gradient(135deg, #202a42, #3d4a6b);
+}
+
+.tone-2 {
+  background: linear-gradient(135deg, #22a06b, #167a52);
+}
+
+.tone-3 {
+  background: linear-gradient(135deg, #c86a35, #8f4420);
+}
+
+.tone-4 {
+  background: linear-gradient(135deg, #6d7285, #2f3648);
+}
+
+.tone-empty {
+  background: #ffd8c8;
+  color: var(--brand-dark);
+}
+
 .assets-section {
   min-height: 360px;
 }
@@ -698,6 +800,44 @@ small {
 
 .button.primary {
   margin-top: 16px;
+}
+
+.quick-send-strip {
+  display: grid;
+  gap: 10px;
+  margin: 16px 0 18px;
+}
+
+.quick-send-strip > span {
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.quick-send-strip > div {
+  display: flex;
+  gap: 10px;
+  min-height: 52px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.quick-send-strip > div::-webkit-scrollbar {
+  display: none;
+}
+
+.quick-send-strip button {
+  flex: 0 0 auto;
+  border: 0;
+  border-radius: 16px;
+  padding: 3px;
+  background: transparent;
+  cursor: pointer;
+}
+
+.quick-send-strip small {
+  align-self: center;
+  color: var(--muted);
 }
 
 .button:disabled {
