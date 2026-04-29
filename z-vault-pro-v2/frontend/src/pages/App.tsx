@@ -22,6 +22,7 @@ type QuickContact = {
 };
 const LANDING_SESSION_KEY = 'z-vault-pro-entered';
 const VAULT_ADDRESS_CACHE_PREFIX = 'z-vault-pro-vault-address:';
+const CONTACTS_CACHE_PREFIX = 'z-vault-pro-contacts:';
 
 const TX_URLS: Record<string, string> = {
   nile: 'https://nile.tronscan.org/#/transaction/',
@@ -58,6 +59,13 @@ function maskPrivateKey(value = '') {
 
 function avatarInitials(value = '') {
   if (!value) return 'Z';
+  const words = value.trim().split(/\s+/).filter(Boolean);
+  if (words.length > 1) {
+    return `${words[0][0]}${words[1][0]}`.toUpperCase();
+  }
+  if (value.length === 1) {
+    return value.toUpperCase();
+  }
   return `${value.slice(0, 1)}${value.slice(-1)}`.toUpperCase();
 }
 
@@ -111,6 +119,24 @@ function cacheVaultAddress(address: string, vaultAddress?: string) {
   localStorage.setItem(vaultAddressCacheKey(address), vaultAddress);
 }
 
+function contactsCacheKey(address: string) {
+  return `${CONTACTS_CACHE_PREFIX}${address}`;
+}
+
+function readContactNames(address: string): Record<string, string> {
+  if (!address) return {};
+  try {
+    return JSON.parse(localStorage.getItem(contactsCacheKey(address)) || '{}');
+  } catch {
+    return {};
+  }
+}
+
+function saveContactNames(address: string, contacts: Record<string, string>) {
+  if (!address) return;
+  localStorage.setItem(contactsCacheKey(address), JSON.stringify(contacts));
+}
+
 export function App() {
   const [privateKey, setPrivateKey] = useState('');
   const [walletAddress, setWalletAddress] = useState('');
@@ -131,6 +157,8 @@ export function App() {
   const [view, setView] = useState<View>('home');
   const [enteredWallet, setEnteredWallet] = useState(() => hasStoredWallet() || sessionStorage.getItem(LANDING_SESSION_KEY) === '1');
   const [cachedVaultAddress, setCachedVaultAddress] = useState('');
+  const [contactNames, setContactNames] = useState<Record<string, string>>({});
+  const [recipientName, setRecipientName] = useState('');
   const activeWalletRef = useRef('');
 
   const vaultAddress = vault?.vaultAddress || cachedVaultAddress;
@@ -147,20 +175,27 @@ export function App() {
   const filteredHistory = historyFilter === 'received' ? deposits : historyFilter === 'sent' ? history : combinedHistory;
   const quickContacts = useMemo<QuickContact[]>(() => {
     const seen = new Set<string>();
-    return history
+    const historyRecipients = history
       .filter((row) => row.recipient && row.status === 'confirmed')
       .filter((row) => {
         if (seen.has(row.recipient)) return false;
         seen.add(row.recipient);
         return true;
       })
-      .slice(0, 5)
-      .map((row, index) => ({
-        address: row.recipient,
-        label: `Wallet ${index + 1}`,
-        subtitle: shortAddress(row.recipient)
-      }));
-  }, [history]);
+      .map((row) => row.recipient);
+
+    const savedRecipients = Object.keys(contactNames).filter((address) => {
+      if (seen.has(address)) return false;
+      seen.add(address);
+      return true;
+    });
+
+    return [...historyRecipients, ...savedRecipients].slice(0, 5).map((address, index) => ({
+      address,
+      label: contactNames[address] || `Wallet ${index + 1}`,
+      subtitle: shortAddress(address)
+    }));
+  }, [contactNames, history]);
 
   useEffect(() => {
     getConfig().then(setConfig).catch(() => null);
@@ -175,6 +210,7 @@ export function App() {
     activeWalletRef.current = walletAddress;
     setVault(null);
     setCachedVaultAddress(readCachedVaultAddress(walletAddress));
+    setContactNames(readContactNames(walletAddress));
     refreshWalletState(walletAddress);
     const timer = setInterval(() => refreshWalletState(walletAddress), 10000);
     return () => clearInterval(timer);
@@ -235,13 +271,36 @@ export function App() {
   }
 
   function openReceive() {
+    const cached = readCachedVaultAddress(walletAddress);
+    if (cached) {
+      setCachedVaultAddress(cached);
+    }
     setView('receive');
-    void loadVaultAddress(walletAddress);
+    if (!vaultAddress) {
+      void loadVaultAddress(walletAddress);
+    }
   }
 
   function openQuickSend(address: string) {
     setRecipient(address);
+    setRecipientName(contactNames[address] || '');
     setView('send');
+  }
+
+  function saveRecipientName(address = recipient, name = recipientName) {
+    const trimmedAddress = address.trim();
+    const trimmedName = name.trim();
+    if (!walletAddress || !trimmedAddress || !trimmedName) {
+      return;
+    }
+
+    const nextContacts = {
+      ...contactNames,
+      [trimmedAddress]: trimmedName
+    };
+    setContactNames(nextContacts);
+    saveContactNames(walletAddress, nextContacts);
+    setMessage(`${trimmedName} saved to Quick Share.`);
   }
 
   async function createWallet() {
@@ -261,6 +320,7 @@ export function App() {
       activeWalletRef.current = wallet.address;
       setVault(null);
       setCachedVaultAddress(readCachedVaultAddress(wallet.address));
+      setContactNames(readContactNames(wallet.address));
       setWalletAddress(wallet.address);
       setPassword('');
       setConfirmPassword('');
@@ -282,6 +342,7 @@ export function App() {
       activeWalletRef.current = wallet.address;
       setVault(null);
       setCachedVaultAddress(readCachedVaultAddress(wallet.address));
+      setContactNames(readContactNames(wallet.address));
       setWalletAddress(wallet.address);
       setPassword('');
       setStatus('idle');
@@ -302,6 +363,8 @@ export function App() {
     setHistory([]);
     setDeposits([]);
     setCachedVaultAddress('');
+    setContactNames({});
+    setRecipientName('');
     setShowPrivateKey(false);
     setStatus('idle');
     setMessage('Wallet locked.');
@@ -502,7 +565,7 @@ export function App() {
             <div className="quick-share-row">
               {quickContacts.map((contact, index) => (
                 <button key={contact.address} className="quick-contact" onClick={() => openQuickSend(contact.address)}>
-                  <span className={`quick-avatar tone-${index % 5}`}>{avatarInitials(contact.address)}</span>
+                  <span className={`quick-avatar tone-${index % 5}`}>{avatarInitials(contact.label)}</span>
                   <strong>{contact.label}</strong>
                   <small>{contact.subtitle}</small>
                 </button>
@@ -575,8 +638,8 @@ export function App() {
             <span>Quick Share</span>
             <div>
               {quickContacts.map((contact, index) => (
-                <button key={contact.address} onClick={() => setRecipient(contact.address)} title={contact.address}>
-                  <span className={`quick-avatar tone-${index % 5}`}>{avatarInitials(contact.address)}</span>
+                <button key={contact.address} onClick={() => openQuickSend(contact.address)} title={contact.address}>
+                  <span className={`quick-avatar tone-${index % 5}`}>{avatarInitials(contact.label)}</span>
                 </button>
               ))}
               {!quickContacts.length ? <small>No recent recipients yet</small> : null}
@@ -585,7 +648,36 @@ export function App() {
           <div className="grid two">
             <div className="field wide">
               <label htmlFor="recipient">Recipient</label>
-              <input id="recipient" className="input" value={recipient} onChange={(event) => setRecipient(event.target.value)} placeholder="T..." />
+              <input
+                id="recipient"
+                className="input"
+                value={recipient}
+                onChange={(event) => {
+                  const nextRecipient = event.target.value;
+                  setRecipient(nextRecipient);
+                  setRecipientName(contactNames[nextRecipient] || '');
+                }}
+                placeholder="T..."
+              />
+            </div>
+            <div className="field wide contact-name-field">
+              <label htmlFor="recipient-name">Receiver name</label>
+              <div className="contact-name-row">
+                <input
+                  id="recipient-name"
+                  className="input"
+                  value={recipientName}
+                  onChange={(event) => setRecipientName(event.target.value)}
+                  placeholder="e.g. Ameen, Binance, Supplier"
+                />
+                <button
+                  className="mini-button"
+                  disabled={!recipient || !recipientName.trim()}
+                  onClick={() => saveRecipientName()}
+                >
+                  Save
+                </button>
+              </div>
             </div>
             <div className="field">
               <label htmlFor="amount">Amount</label>
