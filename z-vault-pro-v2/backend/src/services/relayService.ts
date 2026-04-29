@@ -44,6 +44,37 @@ function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+function decodeRevertReason(hex?: string) {
+  if (!hex || !hex.startsWith('08c379a0')) {
+    return null;
+  }
+
+  try {
+    const reasonHex = hex.slice(8 + 64 + 64);
+    const reasonLength = Number.parseInt(reasonHex.slice(0, 64), 16);
+    const reasonData = reasonHex.slice(64, 64 + reasonLength * 2);
+    return tronWeb.toUtf8(`0x${reasonData}`);
+  } catch {
+    return null;
+  }
+}
+
+function summarizeReceipt(info: any) {
+  const contractResult = Array.isArray(info?.contractResult) ? info.contractResult[0] : undefined;
+  const revertReason = decodeRevertReason(contractResult);
+  const result = info?.receipt?.result || info?.result || 'UNKNOWN';
+
+  return {
+    result,
+    revertReason,
+    energyUsageTotal: info?.receipt?.energy_usage_total ?? info?.receipt?.energy_usage,
+    energyPenaltyTotal: info?.receipt?.energy_penalty_total,
+    netFee: info?.receipt?.net_fee,
+    fee: info?.fee,
+    contractResult
+  };
+}
+
 async function withTimeout<T>(operation: Promise<T>, ms: number, label: string): Promise<T> {
   let timer: NodeJS.Timeout | undefined;
   try {
@@ -96,7 +127,11 @@ async function waitForReceipt(txHash: string, attempts = 20) {
       if (!result || result === 'SUCCESS') {
         return info;
       }
-      throw new Error(`On-chain execution reverted: ${result}`);
+      const summary = summarizeReceipt(info);
+      const reason = summary.revertReason ? `: ${summary.revertReason}` : '';
+      const error = new Error(`On-chain execution reverted: ${result}${reason}`);
+      (error as any).receiptSummary = summary;
+      throw error;
     }
     await sleep(2000);
   }
@@ -120,11 +155,19 @@ async function reconcileBroadcastedRequest(row: { id: string; tx_hash: string | 
     return;
   }
 
+  const summary = summarizeReceipt(info);
+  const reason = summary.revertReason ? `: ${summary.revertReason}` : '';
   updateRelayRequest(row.id, 'reverted', {
     txHash: row.tx_hash,
-    errorMessage: `On-chain execution reverted: ${result}`
+    errorMessage: `On-chain execution reverted: ${result}${reason}`
   });
-  insertRelayEvent(row.id, 'relay_reverted_late', { txHash: row.tx_hash, receipt: info });
+  insertRelayEvent(row.id, 'relay_reverted_late', {
+    failureStatus: 'reverted',
+    txHash: row.tx_hash,
+    revertReason: summary.revertReason,
+    receiptSummary: summary,
+    receipt: info
+  });
 }
 
 async function preflightConstantCall(params: {
@@ -147,6 +190,22 @@ async function preflightConstantCall(params: {
     throw new Error(simulation.result.message ? tronWeb.toUtf8(simulation.result.message) : 'REVERT opcode executed');
   }
   return simulation;
+}
+
+function isKnownExecutionFailure(message: string) {
+  const normalized = message.toLowerCase();
+  return [
+    'token transfer returned false',
+    'token transfer reverted',
+    'recipient amount mismatch',
+    'fee amount mismatch',
+    'withdraw amount mismatch',
+    'insufficient',
+    'fee too high',
+    'token not allowed',
+    'invalid signature',
+    'expired'
+  ].some((needle) => normalized.includes(needle));
 }
 
 async function getRelayerContract() {
@@ -189,7 +248,22 @@ export async function getVaultStatus(userAddress: string) {
 export async function getRelayHistory(userAddress: string) {
   const pending = listBroadcastedHistory(userAddress);
   await Promise.all(pending.map((row) => reconcileBroadcastedRequest(row)));
-  return listHistory(userAddress);
+  return listHistory(userAddress).map((row) => {
+    let details: Record<string, unknown> | null = null;
+    if (row.diagnostics_json) {
+      try {
+        details = JSON.parse(row.diagnostics_json);
+      } catch {
+        details = null;
+      }
+    }
+
+    const { diagnostics_json: _diagnosticsJson, ...safeRow } = row;
+    return {
+      ...safeRow,
+      details
+    };
+  });
 }
 
 export async function submitRelay(rawInput: unknown) {
@@ -282,6 +356,12 @@ export async function submitRelay(rawInput: unknown) {
   });
 
   let failureStatus: 'preflight_failed' | 'broadcast_rejected' | 'reverted' = 'preflight_failed';
+  const diagnostics: Record<string, unknown> = {
+    vaultAddress,
+    actualBalance: vault.balanceSun,
+    amountSun: input.message.value,
+    feeSun: input.message.fee
+  };
 
   try {
     const signingAddress = tronWeb.trx.verifyTypedData(
@@ -321,11 +401,13 @@ export async function submitRelay(rawInput: unknown) {
     const requestedValue = BigInt(input.message.value);
     const requestedFee = BigInt(input.message.fee);
     if (requestedValue === SWEEP_VALUE) {
+      diagnostics.requiredBalance = requestedFee.toString();
       if (vaultBalance <= requestedFee) {
         throw new Error(`Vault ${vaultAddress} has insufficient USDT for sweep plus fee`);
       }
     } else {
       const requiredBalance = requestedValue + requestedFee;
+      diagnostics.requiredBalance = requiredBalance.toString();
       if (vaultBalance < requiredBalance) {
         throw new Error(`Vault ${vaultAddress} has insufficient USDT for transfer plus fee`);
       }
@@ -361,11 +443,16 @@ export async function submitRelay(rawInput: unknown) {
         energyTarget = Math.max(energyTarget, Math.ceil(estimated * 1.2));
       }
     } catch (error: any) {
+      const message = String(error?.message || error);
+      if (isKnownExecutionFailure(message)) {
+        throw error;
+      }
       if (vaultDeployed) {
         throw error;
       }
-      insertRelayEvent(requestId, 'relay_preflight_fallback', { message: String(error?.message || error) });
+      insertRelayEvent(requestId, 'relay_preflight_fallback', { message });
     }
+    diagnostics.energyTarget = energyTarget;
 
     await ensureRelayerTrxBuffer();
 
@@ -420,6 +507,7 @@ export async function submitRelay(rawInput: unknown) {
     }
 
     const txHash = signed.txID as string;
+    diagnostics.txHash = txHash;
     failureStatus = 'reverted';
     updateRelayRequest(requestId, 'broadcasted', { txHash });
     insertRelayEvent(requestId, 'relay_broadcasted', { txHash, broadcast });
@@ -448,9 +536,21 @@ export async function submitRelay(rawInput: unknown) {
     };
   } catch (error: any) {
     const message = String(error?.message || error);
-    updateRelayRequest(requestId, failureStatus, { errorMessage: message });
-    insertRelayEvent(requestId, 'relay_failed', { status: failureStatus, message });
-    logEvent('relay_failed', { requestId, correlationId: input.correlationId, status: failureStatus, message });
+    const receiptSummary = error?.receiptSummary;
+    const failureDetails = {
+      failureStatus,
+      message,
+      revertReason: receiptSummary?.revertReason ?? null,
+      receiptSummary,
+      ...diagnostics
+    };
+    updateRelayRequest(requestId, failureStatus, {
+      txHash: typeof diagnostics.txHash === 'string' ? diagnostics.txHash : undefined,
+      errorMessage: message
+    });
+    insertRelayEvent(requestId, 'relay_failed', failureDetails);
+    logEvent('relay_failed', { requestId, correlationId: input.correlationId, ...failureDetails });
+    error.details = failureDetails;
     throw error;
   }
 }

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { type MouseEvent, useEffect, useMemo, useRef, useState } from 'react';
 import { QRCodeSVG } from 'qrcode.react';
 import { nanoid } from 'nanoid';
 import { getConfig, getDeposits, getHistory, getVault, submitRelay } from '../lib/api';
@@ -36,6 +36,28 @@ function toUsdt(balanceSun?: string | number) {
 function formatUsdt(balanceSun?: string | number) {
   const value = toUsdt(balanceSun);
   return value.toLocaleString(undefined, { maximumFractionDigits: 6 });
+}
+
+function toSunFromUsdt(amountUsdt: string | number) {
+  const value = Number(amountUsdt);
+  if (!Number.isFinite(value)) {
+    return Number.NaN;
+  }
+  return Math.floor(value * 1_000_000);
+}
+
+function feeForVault(vaultData: any, configData: any) {
+  return String(vaultData?.deployed ? (configData?.platformFeeUsdt ?? 1.2) : (configData?.firstSendFeeUsdt ?? 3));
+}
+
+function balanceRequirementMessage(params: {
+  amountSun: number;
+  feeSun: number;
+  balanceSun: number;
+  isActivationFee: boolean;
+}) {
+  const feeLabel = params.isActivationFee ? 'activation fee' : 'platform fee';
+  return `Need ${formatUsdt(params.amountSun + params.feeSun)} USDT: amount ${formatUsdt(params.amountSun)} + ${feeLabel} ${formatUsdt(params.feeSun)}. Current vault balance: ${formatUsdt(params.balanceSun)} USDT.`;
 }
 
 function formatUsd(value?: string | number) {
@@ -153,6 +175,7 @@ export function App() {
   const [historyFilter, setHistoryFilter] = useState<HistoryFilter>('all');
   const [status, setStatus] = useState<RelayState>('idle');
   const [message, setMessage] = useState('');
+  const [isVaultRefreshing, setIsVaultRefreshing] = useState(false);
   const [config, setConfig] = useState<any>(null);
   const [view, setView] = useState<View>('home');
   const [enteredWallet, setEnteredWallet] = useState(() => hasStoredWallet() || sessionStorage.getItem(LANDING_SESSION_KEY) === '1');
@@ -161,13 +184,14 @@ export function App() {
   const [recipientName, setRecipientName] = useState('');
   const activeWalletRef = useRef('');
 
-  const vaultAddress = vault?.vaultAddress || cachedVaultAddress;
-  const feeUsdt = String(vault?.deployed ? (config?.platformFeeUsdt ?? 1.2) : (config?.firstSendFeeUsdt ?? 3));
+  const vaultForCurrentWallet = vault?.ownerAddress === walletAddress ? vault : null;
+  const vaultAddress = vaultForCurrentWallet?.vaultAddress || cachedVaultAddress;
+  const feeUsdt = feeForVault(vaultForCurrentWallet, config);
   const storedAddress = useMemo(() => getStoredWalletAddress(), [passwordMode, walletAddress]);
   const txBaseUrl = config?.network ? TX_URLS[config.network] || TX_URLS.mainnet : TX_URLS.nile;
   const isUnlocked = Boolean(privateKey && walletAddress);
-  const balanceSun = Number(vault?.balanceSun || 0);
-  const feeSun = Math.floor(Number(feeUsdt) * 1_000_000);
+  const balanceSun = Number(vaultForCurrentWallet?.balanceSun || 0);
+  const feeSun = toSunFromUsdt(feeUsdt);
   const spendableSun = Math.max(balanceSun - feeSun, 0);
   const networkLabel = config?.network === 'mainnet' ? 'Mainnet' : 'Nile';
   const combinedHistory = [...deposits, ...history].sort((a, b) => Number(b.created_at || 0) - Number(a.created_at || 0));
@@ -216,9 +240,17 @@ export function App() {
     return () => clearInterval(timer);
   }, [walletAddress]);
 
+  useEffect(() => {
+    if (!message) return;
+    if (status === 'failed' && (message.startsWith('Need ') || message.startsWith('Vault needs '))) {
+      setMessage('');
+      setStatus('idle');
+    }
+  }, [walletAddress, vaultAddress, nonce, amountUsdt, recipient, feeUsdt]);
+
   async function loadVaultAddress(address = walletAddress) {
     if (!address) {
-      return '';
+      return null;
     }
 
     const cached = readCachedVaultAddress(address);
@@ -226,13 +258,18 @@ export function App() {
       setCachedVaultAddress(cached);
     }
 
+    if (activeWalletRef.current === address) {
+      setIsVaultRefreshing(true);
+    }
+
     try {
       const data = await getVault(address);
       if (activeWalletRef.current !== address) {
-        return data?.vaultAddress || cached;
+        return data || null;
       }
 
-      setVault(data);
+      const nextVault = { ...data, ownerAddress: address };
+      setVault(nextVault);
       if (data?.vaultAddress) {
         cacheVaultAddress(address, data.vaultAddress);
         setCachedVaultAddress(data.vaultAddress);
@@ -240,9 +277,13 @@ export function App() {
       if (data?.nonce !== undefined) {
         setNonce(String(data.nonce));
       }
-      return data?.vaultAddress || cached;
+      return nextVault;
     } catch {
-      return cached;
+      return cached ? { vaultAddress: cached, ownerAddress: address } : null;
+    } finally {
+      if (activeWalletRef.current === address) {
+        setIsVaultRefreshing(false);
+      }
     }
   }
 
@@ -303,6 +344,17 @@ export function App() {
     setMessage(`${trimmedName} saved to Quick Share.`);
   }
 
+  function resetWalletScopedState() {
+    setMessage('');
+    setStatus('idle');
+    setVault(null);
+    setNonce('0');
+    setHistory([]);
+    setDeposits([]);
+    setCachedVaultAddress('');
+    setIsVaultRefreshing(false);
+  }
+
   async function createWallet() {
     try {
       if (password !== confirmPassword) {
@@ -316,9 +368,9 @@ export function App() {
         password
       });
 
+      resetWalletScopedState();
       setPrivateKey(wallet.privateKey);
       activeWalletRef.current = wallet.address;
-      setVault(null);
       setCachedVaultAddress(readCachedVaultAddress(wallet.address));
       setContactNames(readContactNames(wallet.address));
       setWalletAddress(wallet.address);
@@ -339,8 +391,8 @@ export function App() {
       const unlockedKey = await unlockEncryptedWallet(password);
       const wallet = deriveWalletFromPrivateKey(unlockedKey);
       setPrivateKey(unlockedKey);
+      resetWalletScopedState();
       activeWalletRef.current = wallet.address;
-      setVault(null);
       setCachedVaultAddress(readCachedVaultAddress(wallet.address));
       setContactNames(readContactNames(wallet.address));
       setWalletAddress(wallet.address);
@@ -359,10 +411,7 @@ export function App() {
     setPrivateKey('');
     setWalletAddress('');
     activeWalletRef.current = '';
-    setVault(null);
-    setHistory([]);
-    setDeposits([]);
-    setCachedVaultAddress('');
+    resetWalletScopedState();
     setContactNames({});
     setRecipientName('');
     setShowPrivateKey(false);
@@ -390,6 +439,9 @@ export function App() {
       if (!privateKey) {
         throw new Error('Unlock the wallet first');
       }
+      if (isVaultRefreshing) {
+        throw new Error('Vault state is refreshing. Please wait a moment.');
+      }
 
       setStatus('validating');
       if (recipient === vaultAddress) {
@@ -401,14 +453,29 @@ export function App() {
         throw new Error('Displayed wallet and encrypted private key do not match');
       }
 
-      const spendSun = Math.floor(Number(amountUsdt) * 1_000_000);
-      const feeSun = Math.floor(Number(feeUsdt) * 1_000_000);
-      const balanceSun = Number(vault?.balanceSun || 0);
+      const spendSun = toSunFromUsdt(amountUsdt);
       if (!Number.isFinite(spendSun) || spendSun <= 0) {
         throw new Error('Enter a valid amount');
       }
-      if (balanceSun < spendSun + feeSun) {
-        throw new Error(`Vault needs ${formatUsdt(spendSun + feeSun)} USDT including fee`);
+
+      const freshVault = await loadVaultAddress(walletAddress);
+      if (!freshVault?.vaultAddress) {
+        throw new Error('Vault state is still loading. Please try again in a moment.');
+      }
+      if (freshVault.balanceSun === undefined || freshVault.nonce === undefined) {
+        throw new Error('Fresh vault state could not be loaded. Please check your connection and try again.');
+      }
+
+      const freshFeeUsdt = feeForVault(freshVault, config);
+      const freshFeeSun = toSunFromUsdt(freshFeeUsdt);
+      const freshBalanceSun = Number(freshVault.balanceSun || 0);
+      if (freshBalanceSun < spendSun + freshFeeSun) {
+        throw new Error(balanceRequirementMessage({
+          amountSun: spendSun,
+          feeSun: freshFeeSun,
+          balanceSun: freshBalanceSun,
+          isActivationFee: !freshVault.deployed
+        }));
       }
 
       setStatus('signing');
@@ -417,8 +484,8 @@ export function App() {
         userAddress: walletAddress,
         recipient,
         amountUsdt,
-        feeUsdt,
-        nonce,
+        feeUsdt: freshFeeUsdt,
+        nonce: String(freshVault.nonce),
         usdtContract: config.usdtContract,
         relayerContract: config.relayerContract,
         chainId: config.chainId,
@@ -542,8 +609,8 @@ export function App() {
               <span className="card-title"><span className="mini-logo">Z</span> Wallet Asset</span>
               <button className="general-wallet-button">Gasless Vault</button>
             </div>
-            <h2>{formatUsd(vault?.balanceSun)}</h2>
-            <strong>{formatUsdt(vault?.balanceSun)} USDT</strong>
+            <h2>{formatUsd(vaultForCurrentWallet?.balanceSun)}</h2>
+            <strong>{formatUsdt(vaultForCurrentWallet?.balanceSun)} USDT</strong>
             <p>{vaultAddress ? shortAddress(vaultAddress) : 'Loading vault address'}</p>
             <button className="copy-mini" disabled={!vaultAddress} onClick={() => copyText(vaultAddress, 'Vault address')}>Copy</button>
             <span className="watermark">Z</span>
@@ -592,8 +659,8 @@ export function App() {
                 <small>$0.99993</small>
               </span>
               <span className="asset-amount">
-                <strong>{formatUsdt(vault?.balanceSun)}</strong>
-                <small>{formatUsd(vault?.balanceSun)}</small>
+                <strong>{formatUsdt(vaultForCurrentWallet?.balanceSun)}</strong>
+                <small>{formatUsd(vaultForCurrentWallet?.balanceSun)}</small>
               </span>
             </button>
           </section>
@@ -601,7 +668,7 @@ export function App() {
           <section className="panel receive-panel">
             <div className="section-title">
               <h2>Receive USDT</h2>
-              <StatusPill label={vault?.deployed ? 'deployed' : 'not deployed'} />
+              <StatusPill label={vaultForCurrentWallet?.deployed ? 'deployed' : 'not deployed'} />
             </div>
             <div className="address-card">
               <span>Your gasless address</span>
@@ -630,7 +697,7 @@ export function App() {
           <div className="section-title">
             <div>
               <h2>Send USDT</h2>
-              <p className="muted">Available {formatUsdt(vault?.balanceSun)} USDT</p>
+              <p className="muted">Available {formatUsdt(vaultForCurrentWallet?.balanceSun)} USDT</p>
             </div>
             <StatusPill label={status} />
           </div>
@@ -684,7 +751,7 @@ export function App() {
               <input id="amount" inputMode="decimal" className="input" value={amountUsdt} onChange={(event) => setAmountUsdt(event.target.value)} />
             </div>
             <div className="readonly-box">
-              <span>{vault?.deployed ? 'Platform fee' : 'Activation fee'}</span>
+              <span>{vaultForCurrentWallet?.deployed ? 'Platform fee' : 'Activation fee'}</span>
               <strong>{feeUsdt} USDT</strong>
             </div>
             <div className="readonly-box">
@@ -696,7 +763,13 @@ export function App() {
             <span>Total deducted</span>
             <strong>{Number(amountUsdt || 0) + Number(feeUsdt || 0)} USDT</strong>
           </div>
-          <button className="button primary" disabled={!recipient || status === 'signing' || status === 'broadcasting'} onClick={sendGasless}>Send Gasless</button>
+          <button
+            className="button primary"
+            disabled={!recipient || isVaultRefreshing || status === 'validating' || status === 'signing' || status === 'broadcasting'}
+            onClick={sendGasless}
+          >
+            Send Gasless
+          </button>
           {message ? <p className="muted">{message}</p> : null}
         </section>
       ) : null}
@@ -754,8 +827,8 @@ export function App() {
           </div>
           <div className="asset-balance-card">
             <span className="usdt-badge large">T</span>
-            <h3>{formatUsdt(vault?.balanceSun)}</h3>
-            <p>{formatUsd(vault?.balanceSun)}</p>
+            <h3>{formatUsdt(vaultForCurrentWallet?.balanceSun)}</h3>
+            <p>{formatUsd(vaultForCurrentWallet?.balanceSun)}</p>
             <div>
               <span>Available<strong>{formatUsdt(spendableSun)}</strong></span>
               <span>Fee Reserve<strong>{formatUsdt(feeSun)}</strong></span>
@@ -981,6 +1054,23 @@ function TransactionRow({ row, txBaseUrl }: { row: any; txBaseUrl: string }) {
   const isReceived = row.type === 'received';
   const tone = isReceived ? 'received' : rowTone(row.status);
   const directionText = isReceived ? `From ${shortAddress(row.sender)}` : `To ${shortAddress(row.recipient)}`;
+  const isFailure = !isReceived && (row.status === 'reverted' || row.status === 'preflight_failed' || row.status === 'broadcast_rejected');
+  const failureDetails = row.details || {
+    status: row.status,
+    errorMessage: row.error_message,
+    txHash: row.tx_hash,
+    recipient: row.recipient,
+    amountSun: row.amount_sun,
+    feeSun: row.fee_sun,
+    vaultAddress: row.vault_address
+  };
+
+  async function copyFailureDetails(event: MouseEvent) {
+    event.preventDefault();
+    event.stopPropagation();
+    await navigator.clipboard.writeText(JSON.stringify(failureDetails, null, 2));
+  }
+
   return (
     <a className={`history-item ${tone}`} href={href} target="_blank" rel="noreferrer">
       <span className={`activity-icon ${isReceived ? 'credit' : 'debit'}`}>{isReceived ? '+' : tone === 'success' ? '-' : tone === 'failed' ? '!' : '..'}</span>
@@ -988,6 +1078,11 @@ function TransactionRow({ row, txBaseUrl }: { row: any; txBaseUrl: string }) {
         <strong>{isReceived ? 'Received' : statusLabel(row.status)}</strong>
         <p className="muted">{directionText} - {formatDate(row.created_at)}</p>
         {row.error_message ? <p className="muted error-text">{row.error_message}</p> : null}
+        {isFailure ? (
+          <span className="copy-details-button" role="button" tabIndex={0} onClick={copyFailureDetails}>
+            Copy details
+          </span>
+        ) : null}
       </div>
       <div className={`history-amount ${isReceived ? 'credit' : 'debit'}`}>
         <strong>{isReceived ? '+' : '-'}{formatUsdt(row.amount_sun)} USDT</strong>

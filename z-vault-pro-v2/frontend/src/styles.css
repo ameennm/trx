@@ -1771,6 +1771,45 @@ body {
   color: var(--danger) !important;
 }
 
+a.history-item.received .activity-icon,
+a.history-item.received .activity-icon.credit {
+  background: #e8f8ef !important;
+  color: var(--success) !important;
+}
+
+a.history-item.received .history-amount strong,
+a.history-item.received .history-amount.credit strong {
+  color: var(--success) !important;
+}
+
+a.history-item.success .activity-icon,
+a.history-item.success .activity-icon.debit,
+a.history-item.failed .activity-icon,
+a.history-item.failed .activity-icon.debit {
+  background: #fff0f1 !important;
+  color: var(--danger) !important;
+}
+
+a.history-item.success .history-amount strong,
+a.history-item.failed .history-amount strong,
+a.history-item .history-amount.debit strong {
+  color: var(--danger) !important;
+}
+
+.copy-details-button {
+  display: inline-flex;
+  width: fit-content;
+  margin-top: 8px;
+  border: 1px solid rgba(239, 228, 221, 0.92);
+  border-radius: 999px;
+  padding: 5px 9px;
+  background: #fff8f4;
+  color: var(--brand-dark);
+  font-size: 11px;
+  font-weight: 850;
+  cursor: pointer;
+}
+
 .asset-detail,
 .receive-screen {
   border: 0;

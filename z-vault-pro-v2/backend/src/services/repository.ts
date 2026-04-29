@@ -31,8 +31,11 @@ export interface RelayHistoryRow {
   recipient: string;
   amount_sun: string;
   fee_sun: string;
+  vault_address?: string;
   status: RelayStatus;
   tx_hash: string | null;
+  error_message: string | null;
+  diagnostics_json?: string | null;
   created_at: number;
   updated_at: number;
 }
@@ -102,10 +105,28 @@ export function insertRelayEvent(requestId: string, eventName: string, details: 
 
 export function listHistory(userAddress: string) {
   return db.prepare<[string], RelayHistoryRow>(`
-    SELECT id, recipient, amount_sun, fee_sun, status, tx_hash, created_at, updated_at
-    FROM relay_requests
-    WHERE user_address = ?
-    ORDER BY created_at DESC
+    SELECT
+      rr.id,
+      rr.recipient,
+      rr.amount_sun,
+      rr.fee_sun,
+      rr.vault_address,
+      rr.status,
+      rr.tx_hash,
+      rr.error_message,
+      rr.created_at,
+      rr.updated_at,
+      (
+        SELECT re.details_json
+        FROM relay_events re
+        WHERE re.request_id = rr.id
+          AND re.event_name IN ('relay_failed', 'relay_reverted_late', 'relay_broadcasted', 'relay_confirmed_late')
+        ORDER BY re.created_at DESC
+        LIMIT 1
+      ) AS diagnostics_json
+    FROM relay_requests rr
+    WHERE rr.user_address = ?
+    ORDER BY rr.created_at DESC
     LIMIT 50
   `).all(userAddress);
 }
